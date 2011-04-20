@@ -1,0 +1,18 @@
+/DumpAlignSlice.pl/1.5/Wed Jan 10 12:00:53 2007//Tbranch-ensembl-60
+/DumpAlignedGenes.pl/1.4/Wed Jan 10 12:01:04 2007//Tbranch-ensembl-60
+/DumpAlignments.pl/1.4/Tue Nov  2 11:34:08 2004//Tbranch-ensembl-60
+/DumpAndLoadConstrainedElements.pl/1.3/Wed Jan 28 11:00:02 2009//Tbranch-ensembl-60
+/DumpAxtAlignments.pl/1.14/Wed Jan 10 12:01:13 2007//Tbranch-ensembl-60
+/DumpChromosomeFragments.pl/1.17/Thu Dec  1 16:48:38 2005//Tbranch-ensembl-60
+/DumpConservationScores.pl/1.2/Fri Sep  3 08:38:41 2010//Tbranch-ensembl-60
+/DumpFakeMultiAlign.pl/1.4/Wed Jan 10 12:01:22 2007//Tbranch-ensembl-60
+/DumpMultiAlign.pl/1.32/Fri Sep  3 08:32:11 2010//Tbranch-ensembl-60
+/DumpandLoadChromosomeFragments.pl/1.6/Tue Jan 18 15:23:09 2005//Tbranch-ensembl-60
+/LoadAxtAlignments.pl/1.8/Tue Mar 23 16:11:37 2004//Tbranch-ensembl-60
+/RepeatMaskingRestriction.conf.example/1.1/Fri Nov 28 13:47:45 2003//Tbranch-ensembl-60
+/dumpTransAxt.pl/1.3/Wed Jan 10 12:01:30 2007//Tbranch-ensembl-60
+/dumpTreeMSA_id.pl/1.2/Fri Jul 16 21:54:39 2010//Tbranch-ensembl-60
+/dump_features.pl/1.1/Tue Sep 14 08:29:08 2010//Tbranch-ensembl-60
+/emf2maf.pl/1.2/Tue Mar 17 07:32:14 2009//Tbranch-ensembl-60
+/fetch_alignblocks.pl/1.3/Tue Feb 25 14:26:21 2003//Tbranch-ensembl-60
+D

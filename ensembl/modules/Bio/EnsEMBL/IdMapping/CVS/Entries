@@ -1,0 +1,22 @@
+/Archiver.pm/1.5/Mon Aug 16 12:23:53 2010//Tbranch-ensembl-60
+/BaseObject.pm/1.9/Mon Aug 16 12:23:53 2010//Tbranch-ensembl-60
+/Cache.pm/1.30/Mon Aug 16 12:23:53 2010//Tbranch-ensembl-60
+/Entry.pm/1.7/Mon Aug 16 12:23:53 2010//Tbranch-ensembl-60
+/ExonScoreBuilder.pm/1.18/Mon Aug 16 12:23:53 2010//Tbranch-ensembl-60
+/GeneScoreBuilder.pm/1.14/Mon Aug 16 12:23:53 2010//Tbranch-ensembl-60
+/InternalIdMapper.pm/1.9/Mon Aug 16 12:23:53 2010//Tbranch-ensembl-60
+/MappingList.pm/1.8/Mon Aug 16 12:23:53 2010//Tbranch-ensembl-60
+/ResultAnalyser.pm/1.14/Mon Aug 16 12:23:53 2010//Tbranch-ensembl-60
+/ScoreBuilder.pm/1.11/Mon Aug 16 12:23:53 2010//Tbranch-ensembl-60
+/ScoredMappingMatrix.pm/1.12/Mon Aug 16 12:23:53 2010//Tbranch-ensembl-60
+/Serialisable.pm/1.8/Mon Aug 16 12:23:53 2010//Tbranch-ensembl-60
+/StableIdMapper.pm/1.15/Mon Aug 16 12:23:53 2010//Tbranch-ensembl-60
+/SyntenyFramework.pm/1.13/Mon Aug 16 12:23:53 2010//Tbranch-ensembl-60
+/SyntenyRegion.pm/1.8/Mon Aug 16 12:23:53 2010//Tbranch-ensembl-60
+/TinyExon.pm/1.9/Mon Aug 16 12:23:53 2010//Tbranch-ensembl-60
+/TinyFeature.pm/1.7/Mon Aug 16 12:23:53 2010//Tbranch-ensembl-60
+/TinyGene.pm/1.11/Mon Aug 16 12:23:53 2010//Tbranch-ensembl-60
+/TinyTranscript.pm/1.9/Mon Aug 16 12:23:53 2010//Tbranch-ensembl-60
+/TinyTranslation.pm/1.7/Mon Aug 16 12:23:53 2010//Tbranch-ensembl-60
+/TranscriptScoreBuilder.pm/1.10/Mon Aug 16 12:23:53 2010//Tbranch-ensembl-60
+D

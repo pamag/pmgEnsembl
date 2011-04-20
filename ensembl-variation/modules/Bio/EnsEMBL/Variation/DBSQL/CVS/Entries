@@ -1,0 +1,24 @@
+/AlleleFeatureAdaptor.pm/1.21/Wed Apr  7 17:07:19 2010//Tbranch-ensembl-60
+/AlleleGroupAdaptor.pm/1.6/Wed Dec  2 15:58:11 2009//Tbranch-ensembl-60
+/BaseGenotypeAdaptor.pm/1.4/Wed Feb 14 16:30:18 2007//Tbranch-ensembl-60
+/BaseVariationAdaptor.pm/1.1/Fri Jun 18 15:46:23 2010//Tbranch-ensembl-60
+/CompressedGenotypeAdaptor.pm/1.15/Wed Dec  2 15:58:11 2009//Tbranch-ensembl-60
+/DBAdaptor.pm/1.19/Thu Jan 14 10:58:35 2010//Tbranch-ensembl-60
+/IndividualAdaptor.pm/1.15/Wed Dec  2 15:58:11 2009//Tbranch-ensembl-60
+/IndividualGenotypeAdaptor.pm/1.12/Tue Oct 26 08:33:21 2010//Tbranch-ensembl-60
+/LDFeatureContainerAdaptor.pm/1.31/Tue Apr 27 13:05:14 2010//Tbranch-ensembl-60
+/MetaContainer.pm/1.7/Wed Nov  4 09:44:50 2009//Tbranch-ensembl-60
+/PopulationAdaptor.pm/1.23/Mon Nov  1 12:06:21 2010//Tbranch-ensembl-60
+/PopulationGenotypeAdaptor.pm/1.10.16.3/Wed Nov  3 14:51:45 2010//Tbranch-ensembl-60
+/ReadCoverageAdaptor.pm/1.21/Wed Dec  2 15:58:12 2009//Tbranch-ensembl-60
+/ReadCoverageCollectionAdaptor.pm/1.3/Wed Dec  2 15:58:12 2009//Tbranch-ensembl-60
+/SampleAdaptor.pm/1.5/Fri Sep  5 14:44:21 2008//Tbranch-ensembl-60
+/StructuralVariationAdaptor.pm/1.5/Fri Jun 11 10:18:56 2010//Tbranch-ensembl-60
+/TranscriptVariationAdaptor.pm/1.25/Thu Aug 26 10:41:58 2010//Tbranch-ensembl-60
+/VariationAdaptor.pm/1.51.2.1/Wed Nov  3 12:21:21 2010//Tbranch-ensembl-60
+/VariationAnnotationAdaptor.pm/1.10/Tue Jul 20 11:11:42 2010//Tbranch-ensembl-60
+/VariationFeatureAdaptor.pm/1.39/Wed Oct 27 08:50:57 2010//Tbranch-ensembl-60
+/VariationGroupAdaptor.pm/1.6/Wed Dec  2 15:58:12 2009//Tbranch-ensembl-60
+/VariationGroupFeatureAdaptor.pm/1.4/Wed Dec  2 15:58:12 2009//Tbranch-ensembl-60
+/VariationSetAdaptor.pm/1.3/Thu Jan 28 18:18:49 2010//Tbranch-ensembl-60
+D

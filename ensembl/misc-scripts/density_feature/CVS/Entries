@@ -1,0 +1,11 @@
+/DensityCalc.sh/1.7/Fri Feb  5 09:32:10 2010//Tbranch-ensembl-60
+/densities_multi_db.pl/1.3/Mon Aug  2 15:09:44 2004//Tbranch-ensembl-60
+/density_feature_fetch.pl/1.2/Thu Nov 19 12:56:06 2009//Tbranch-ensembl-60
+/gene_density_calc.pl/1.17/Tue May 11 16:21:57 2010//Tbranch-ensembl-60
+/glovar_snp_density.pl/1.9/Thu Nov 19 12:56:06 2009//Tbranch-ensembl-60
+/logicname_density_calc.pl/1.2/Mon Nov 29 11:09:26 2004//Tbranch-ensembl-60
+/percent_gc_calc.pl/1.16/Tue May 11 16:21:57 2010//Tbranch-ensembl-60
+/repeat_coverage_calc.pl/1.13/Tue Feb  2 09:47:38 2010//Tbranch-ensembl-60
+/seq_region_stats.pl/1.26/Thu Apr 15 15:22:09 2010//Tbranch-ensembl-60
+/variation_density.pl/1.14/Fri Sep 24 12:40:11 2010//Tbranch-ensembl-60
+D

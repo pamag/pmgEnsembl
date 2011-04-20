@@ -1,0 +1,661 @@
+  COMPARA PRODUCTION CYCLE
+============================
+
+1. Once the release coordinator has sent the mail for declaration of
+intention, ask the other members of compara group (or related) what
+they intend to produce. Sometimes, you have to wait a bit that gene
+builders do their declaration first to know what compara will need to
+produce and also potential schema changes. Compara has one extra day
+to send the DOI, because we have to know which new species are added.
+
+For homologues and families, ask Albert (avilella@ebi.ac.uk).  
+For whole genome alignments and synteny ask Javier (jherrero@ebi.ac.uk). 
+
+2. Mail the compara declaration of intentions to ensembl-admin@ebi.ac.uk
+send the DOI after the Genebuilders
+
+3. Define priorities and assign jobs to the team members.
+
+3bis. The current (rel.60) compara_master database is sf5_ensembl_compara_master on compara1 
+
+4. Update the ncbi_taxa_node and ncbi_taxa_name in the master DB using the
+ncbi_taxonomy database located in mysql::/ens-livemirror:3306/ncbi_taxonomy
+This is usually done by the person who runs the orthologs/paralogs.
+Check that the ens-livemirror ncbi_taxonomy database has been updated. This is usually done when the GeneBuilders request a change (ie before handover to compara)
+For more information, here is the doc ensembl-compara/scripts/taxonomy/README-taxonomy
+
+time mysqldump -u ensro -h ens-livemirror -P3306 --extended-insert --compress --delayed-insert ncbi_taxonomy \
+ncbi_taxa_node ncbi_taxa_name | mysql -u ensadmin -pxxxx -h compara1 sf5_ensembl_compara_master
+
+Release 60: 1 min
+
+Some of the species need fixing to be webcode-compatible. This is usually done in ens-livemirror, so it's not needed anywhere else. E.g.:
+
+ "update ncbi_taxa_name set name = \"Canis familiaris\" where taxon_id = 9615 and name_class = \"scientific name\" and name = \"Canis lupus familiaris\""
+ "update ncbi_taxa_name set name = \"Canis lupus familiaris\" where taxon_id = 9615 and name_class = \"synonym\" and name = \"Canis familiaris\""
+
+ "update ncbi_taxa_name set name = \"Pongo abelii\" where taxon_id = 9600 and name_class = \"scientific name\" and name = \"Pongo pygmaeus abelii\""
+ "update ncbi_taxa_name set name = \"Pongo pygmaeus abelii\" where taxon_id = 9600 and name_class = \"synonym\" and name = \"Pongo pygmaeus abelii\""
+
+
+5. Add in the master compara database
+(compara1:3306/sf5_ensembl_compara_master) the new entries in the
+genome_db and dnafrag tables. You can set up your registry and use the
+~ensembl-compara/scripts/pipeline/update_genome.pl script. This script
+sets the new genome_dbs as the default assemblies.
+You have to create new genome_db_id (dnafrag) when it is a new assembly, or a new species. 
+Sometimes it's done by the pairwise guys as they want to start building earlier. 
+
+eg. 
+perl update_genome.pl --reg_conf reg_conf_v44.pl --compara compara_master --species bushbaby
+
+eg.
+perl /nfs/acari/avilella/src/ensembl_main/ensembl-compara/scripts/pipeline/update_genome.pl \
+ --reg_conf /lustre/work1/ensembl/avilella/hive/avilella_compara_homology_48/v48.conf \
+ --compara compara-master --species "Ochotona princeps"
+
+5.1 Add in extra non-reference patches 
+
+To add extra non-reference patches to an assembly, eg human, you need the -force option to just add those dnafrags which aren't already in the database.
+
+perl ~/src/ensembl_main/ensembl-compara/scripts/pipeline/update_genome.pl --reg_conf reg_conf --compara compara_master --species human --force
+
+6. New method_link_species_set entries might be added using the
+~ensembl-compara/scripts/pipeline/create_mlss.pl script. The release
+coordinator (or any team member) should create a new
+method_link_species_set in the master database before starting a new
+pipeline in order to get a unique method_link_species_set_id. Ideally
+they can be created before starting to build the new database although
+new method_link_species_sets can be added later on.
+Sometimes the DNA alignment guys add the MLSS themselves. 
+For the homologies this is done by the homologues guys
+
+eg. for the pairwise alignment
+ perl create_mlss.pl --method_link_type  BLASTZ_NET --genome_db_id 22,51 --source "ensembl"  --reg_conf reg_conf_v44.pl --compara compara_master
+
+# --pw stands for all pairwised genome_db_ids in the list provided
+# --sg stands for keep genome_db_id in the list alone (singleton) 
+
+#orthologues
+echo -e "201\n" | /usr/local/ensembl/bin/perl /nfs/acari/avilella/src/ensembl_main/ensembl-compara/scripts/pipeline/create_mlss.pl --reg_conf /lustre/work1/ensembl/avilella/hive/avilella_compara_homology_53/mlss_53.conf --pw --f --genome_db_id "3,4,5,16,18,22,27,29,31,33,34,36,37,38,39,42,43,44,46,48,49,51,52,53,55,56,57,58,60,61,62,64,65,66,67,68,69,77,78,79,80,81,82,83,84,85,86,87,88" 1>create_mlss.ENSEMBL_ORTHOLOGUES.201.out 2>create_mlss.ENSEMBL_ORTHOLOGUES.201.err
+
+# paralogues btw                              
+echo -e "202\n" | /usr/local/ensembl/bin/perl /nfs/acari/avilella/src/ensembl_main/ensembl-compara/scripts/pipeline/create_mlss.pl --reg_conf /lustre/work1/ensembl/avilella/hive/avilella_compara_homology_53/mlss_53.conf --pw --f --genome_db_id "3,4,5,16,18,22,27,29,31,33,34,36,37,38,39,42,43,44,46,48,49,51,52,53,55,56,57,58,60,61,62,64,65,66,67,68,69,77,78,79,80,81,82,83,84,85,86,87,88" 1>create_mlss.ENSEMBL_PARALOGUES.btw.202.out 2>create_mlss.ENSEMBL_PARALOGUES.btw.202.err
+
+# paralogues wth                              
+echo -e "202\n" | /usr/local/ensembl/bin/perl /nfs/acari/avilella/src/ensembl_main/ensembl-compara/scripts/pipeline/create_mlss.pl --f --reg_conf /lustre/work1/ensembl/avilella/hive/avilella_compara_homology_53/mlss_53.conf --sg --genome_db_id "3,4,5,16,18,22,27,29,31,33,34,36,37,38,39,42,43,44,46,48,49,51,52,53,55,56,57,58,60,61,62,64,65,66,67,68,69,77,78,79,80,81,82,83,84,85,86,87,88" 1>create_mlss.ENSEMBL_PARALOGUES.wth.202.out 2>create_mlss.ENSEMBL_PARALOGUES.wth.202.err
+
+# proteintrees                                
+echo -e "401\n" | /usr/local/ensembl/bin/perl /nfs/acari/avilella/src/ensembl_main/ensembl-compara/scripts/pipeline/create_mlss.pl --f --reg_conf /lustre/work1/ensembl/avilella/hive/avilella_compara_homology_53/mlss_53.conf --name "protein trees" --genome_db_id "3,4,5,16,18,22,27,29,31,33,34,36,37,38,39,42,43,44,46,48,49,51,52,53,55,56,57,58,60,61,62,64,65,66,67,68,69,77,78,79,80,81,82,83,84,85,86,87,88" 1>create_mlss.PROTEIN_TREES.401.out 2>create_mlss.PROTEIN_TREES.401.err
+
+# families
+echo -e "301\n" | /usr/local/ensembl/bin/perl /nfs/acari/avilella/src/ensembl_main/ensembl-compara/scripts/pipeline/create_mlss.pl --f --reg_conf /lustre/work1/ensembl/avilella/hive/avilella_compara_homology_53/mlss_53.conf --name "families" --genome_db_id "3,4,5,16,18,22,27,29,31,33,34,36,37,38,39,42,43,44,46,48,49,51,52,53,55,56,57,58,60,61,62,64,65,66,67,68,69,77,78,79,80,81,82,83,84,85,86,87,88" 1>create_mlss.FAMILY.301.out 2>create_mlss.FAMILY.301.err
+
+6.1. Update the species_set_tags.
+Run the script: update_species_sets.pl
+
+eg
+perl ~/src/ensembl_main/ensembl-compara/scripts/pipeline/update_species_sets.pl  --conf reg_conf60 --dbname compara_master >& update_species_sets.out
+
+Add/Update any dna tags if necessary. There should be a tag for each of the multiple alignments. Note that fish will already have had a species_set_tag added by the above script.
+eg
+6way epo
+INSERT INTO species_set_tag (species_set_id, tag,value) VALUES (33161,"name","primates");
+
+11way epo
+INSERT INTO species_set_tag (species_set_id, tag,value) VALUES (33162,"name","mammals");
+
+16way mercator/pecan
+INSERT INTO species_set_tag (species_set_id, tag,value) VALUES (33012,"name","amniotes");
+
+33way low coverage
+INSERT INTO species_set_tag (species_set_id, tag,value) VALUES (33163,"name","mammals");
+ 
+
+7. Wait for the handover before starting to build the new database in case
+any of the new species cannot make it. Don't forget to switch the
+assembly_default values of genome_db in this case.
+ [1] for species making it / used in the pipeline
+ [0] for species not making it / or old assemblies
+
+8. Create the new database for the new release and add it to your
+registry configuration file. Use the ~ensembl-compara/sql/table.sql
+file to create the tables and populate the database with the relevant
+primary data and genomic alignments that can be reused from the
+previous release. This can be done with the
+~ensembl-compara/scripts/pipeline/populate_new_database.pl script.  It
+requires the master database, the previous released database and the
+fresh new database with the tables already created. The script will
+copy relevant data from the master and the old database into the new
+one. 
+
+mysql --defaults-group-suffix=_compara1 -e "CREATE DATABASE lg4_ensembl_compara_58"
+mysql --defaults-group-suffix=_compara1 lg4_ensembl_compara_58 < ~lg4/work/ensembl-compara/sql/table.sql
+
+# NB: before you start copying, review the list of mlss_ids that are NOT going to be copied
+# and synchronize it with the 'skip_mlss' meta entries in the master database.
+
+time ~/work/ensembl-compara/scripts/pipeline/populate_new_database.pl \
+    --reg-conf reg_conf.pl --master compara_master --old compara_57 --new compara_58
+
+# took 3 hours for rel. 60 (copied from rel.59)
+# took 2:09 hours for rel.59 (copied from rel.58)
+# took 2:15 hours for rel.58 (copied from rel.57)
+# took 3 hours for rel.57 (copied from rel.pre57)
+# took 3 hours for rel.pre57 (copied from rel.56)
+
+If new method_link_species_sets are added in the master after this, you use this
+script again to copy the new relevant data. In such case, you will have to skip
+the old_database in order to avoid trying to copy the dna-dna alignments and
+syntenies again.
+
+~/work/ensembl-compara/scripts/pipeline/populate_new_database.pl \
+    --reg-conf reg_conf.pl --master compara_master --new compara_58
+
+
+8.1. Copy the species_set_tag table. 
+This needs to be added to the populate_new_database script and not just copied from the master where all old tags need to be deleted.
+But copy from master till this is done.
+INSERT INTO species_set_tag SELECT * FROM sf5_ensembl_compara_master.species_set_tag;
+
+
+8.2. Add new species to phylogenetic tree
+The easiest way to use this is to use the phylowidget.
+From the EnsEMBL home page:
+View full list of all Ensembl species
+Species tree (Requires Java)
+
+Select Arrow and select where you want the new species to go (use ncbi taxonomy or wikipedia etc) eg  Canis familiaris
+Tree Edit
+Add
+Sister
+
+Click on empty node
+Edit Name (add new name)
+
+The tree should appear in the Toolbox but if not, then save the tree
+Copy the new tree into
+ensembl-compara/scripts/pipeline/species_tree_blength.nh
+cvs commit
+
+9. Check that primary data (species data, dnafrags...) in the new compara DB
+match the data in the corresponding core databases using the healthchecks. You
+may have to edit the ensj-healthcheck/database.properties file. It should look
+like this:
+
+    host=compara1
+    port=3306
+    user=ensadmin
+    password=***********
+
+    # Database driver class - shouldn't need to be changed
+    driver=org.gjt.mm.mysql.Driver
+
+    # Master schema - see CompareSchema healthcheck
+    # This setting is ignored if CompareSchema is not run
+    master.schema=master_schema_38
+
+    # Secondary database connection details
+    secondary.host=ecs2
+    secondary.port=3364
+    secondary.user=ensro
+    secondary.driver=org.gjt.mm.mysql.Driver
+
+
+Make sure everything is up to date:
+cd ensj-healthcheck
+cvs update -Pd
+
+Recompile:
+export JAVA_HOME=/software/jdk
+bsub -Is ant
+
+Now you can run the compara-compara_external_foreign_keys healthchecks:
+
+time ./run-healthcheck.sh -d lg4_ensembl_compara_58 -type compara -d2 .+_core_58_.+ compara_external_foreign_keys
+
+...and correct mismatches if any!
+
+
+10. Merge data.
+
+10.0 Human patches for high coverage blastz-net alignments
+     Need all the relevant mlss_ids and use "merge" option of copy_data
+     eg   select distinct(method_link_species_set_id) from kb3_hsap_blastz_hap_60.genomic_align join dnafrag using (dnafrag_id) where genome_db_id=90 and method_link_species_set_id< 1000;   
+
+     for i in 384 385 388 390 392 393 394 404 405 410 428 433 455 473; do echo $i; ~/src/ensembl_main/ensembl-compara/scripts/pipeline/copy_data.pl --from_url mysql://ensro@compara1/kb3_hsap_blastz_hap_60 --to_url mysql://ensadmin:ensembl@compara1/kb3_ensembl_compara_60 --mlss $i --merge; done
+
+
+10.1 TRANSLATED_BLAT_NET, BlastZ-Net, Pecan, Gerp
+
+    The removal of old data shouldn't be necessary unless the skip_mlss entries are not up to date.
+    Removal of old data :
+        # constrained elements are removed directly by mlss_id OF THE CONSTRAINED_ELEMENT:
+            DELETE FROM constrained_element WHERE method_link_species_set_id=CE_MLSS_ID;
+
+        # conservation_scores can only be removed by gab_id, which can be done together with gabs:
+            DELETE gab, cs FROM genomic_align_block gab LEFT JOIN conservation_score cs ON gab.genomic_align_block_id=cs.genomic_align_block_id \
+                WHERE gab.method_link_species_set_id=Main_MLSS_ID;
+
+        # genomic_align_trees and genomic_align_groups are linked to genomic_aligns:
+            DELETE ga, gag, gat FROM genomic_align ga LEFT JOIN genomic_align_group gag ON ga.genomic_align_id=gag.genomic_align_id \
+                LEFT JOIN genomic_align_tree gat ON gag.node_id=gat.node_id \
+                WHERE ga.method_link_species_set_id=Main_MLSS_ID;
+        # in rel.pre57 didn't cleanly remove all gat entries, please check by node_id range.
+
+    These data are usually in separate production databases. You can copy them using the
+    copy_data.pl script in ensembl-compara/scripts/pipeline. This script requires
+    write access to the production database if the dnafrag_ids need fixing or the
+    data must be copyied in binary mode (this is required for conservation scores).
+    Example:
+          bsub -q yesterday -R "select[mem>5000] rusage[mem=5000]" -M5000000 \
+            -I time ~lg4/work/ensembl-compara/scripts/pipeline/copy_data.pl \
+            --from_url mysql://ro_user@host/production_db \
+            --to_url mysql://rw_user:password@host/release_db --mlss 268
+
+    Note_1: bear in mind that even though constrained elements and conservation scores are associated
+    with a multiple alignment, they are not copied automatically and have their own mlss_id,
+    so you should copy them by a separate execution of copy_data.
+
+    Note_2: for copying conservation scores you have to provide rw_user and password for --from_url,
+    because the script needs to write into the production database.
+
+    Note_3: multiple alignments THAT PRODUCE ANCESTRAL SEQUENCES (not all of them do) eg EPO alignments, will also need
+    the ancestral sequences copying to the core ancestral database. The copy_data script has been altered to automatically copy 
+    the ancestral dnafrags into the compara database.
+
+    Note_4: for multiple alignments that SHOULD HAVE BEEN automatically copied from the prev.release,
+    check that you have the ancestral dnafrags copied. Again this should now happen automatically.
+
+
+# rel.58
+#           30m to copy over Human-vs-Marmoset
+#
+#           76m to copy over 33way LC EPO
+#           23m to copy over 33way LC EPO constrained elements
+#           70m to copy over 33way LC EPO conservation scores
+#
+# don't forget to copy ancestral dnafrags for 6-way primates! (done)
+#
+#           48m to copy over 6way primate EPO
+#
+# don't forget to copy ancestral dnafrags for 12-way eutherians! (done)
+#
+#           45m to copy over 12way eutherian EPO
+#
+#           43m to copy over 16way placental mercator/pecan
+#           17m to copy over 16way placental mercator/pecan constrained elements
+#            1h to copy over 16way placental mercator/pecan conservation scores
+
+
+10.2 Syntenies
+
+  Please refer to the documentation in the ensembl-compara/script/synteny directory.
+
+    1) First make sure the entries in reg_conf.pl file point at the latest (staging) versions of the core databases.
+    
+    2) Then run something like:
+    ~/work/ensembl-compara/scripts/synteny/LoadSyntenyData.pl --reg_conf ~/release_58/reg_conf.pl \
+        --dbname compara_58 -qy "Homo sapiens" -tg "Callithrix jacchus" \
+        /lustre/scratch103/ensembl/kb3/scratch/hive/release_58/kb3_hsap_cjac_synteny_58/synteny/all.100000.100000.BuildSynteny
+    3) Check that the MLSS object in the method_link_species_set is fully defined (the loading script may need fixing?)
+
+10.3 Put together ancestral database:
+This is now done using the script copy_ancestral_core.pl. You will need to add any ancestral sequences from the previous release if these have not changed, in addition to adding any new ones. 
+
+    1) Create a new core database:
+        mysql --defaults-group-suffix=_compara4 -e 'CREATE DATABASE lg4_ensembl_ancestral_58'
+        mysql --defaults-group-suffix=_compara4 lg4_ensembl_ancestral_58 <~lg4/work/ensembl/sql/table.sql
+
+    2) Copy over the ancestralsegment coord_system:
+        INSERT INTO lg4_ensembl_ancestral_58.coord_system SELECT * FROM lg4_ensembl_ancestral_57.coord_system;
+
+    3) Add data using copy_ancestral_core.pl script
+
+eg
+bsub -o copy_ancest_474.out -e copy_ancest_474.err -R "select[mem>5000] rusage[mem=5000]" -M5000000 perl ~/src/ensembl_main/ensembl-compara/scripts/pipeline/copy_ancestral_core.pl --from_url mysql://ensadmin:ensembl@compara3/sf5_ortheus_6way_e59_18_06_10_ancestral_core --to_url mysql://ensadmin:ensembl@compara1/kb3_ensembl_ancestral_59 --mlss 474
+
+    4) Check that you have done it correctly:
+        SELECT left(name,12) na, count(*), min(seq_region_id), max(seq_region_id), max(seq_region_id)-min(seq_region_id)+1 FROM seq_region GROUP BY na;
+
+Below is the old way (e58) of doing things. 
+
+=============================
+Merge several ancestral core databases together, starting with the ancestors that haven't changed from prev.release.
+    You need to make sure that 'dna' and 'seq_region' tables that are in sync via seq_region_id field
+    stay in sync in the target database (but there may/need to be a new seq_region_id generated,
+    to avoid collisions between several independently derived sources of ancestral sequences).
+
+Merging each source into target is done in two steps (3) and (4) (assuming the target and the sources are living on the same MySQL instance) :
+
+    1) Create a new core database:
+        mysql --defaults-group-suffix=_compara4 -e 'CREATE DATABASE lg4_ensembl_ancestral_58'
+        mysql --defaults-group-suffix=_compara4 lg4_ensembl_ancestral_58 <~lg4/work/ensembl/sql/table.sql
+
+    2) Copy over the ancestralsegment coord_system:
+        INSERT INTO lg4_ensembl_ancestral_58.coord_system SELECT * FROM lg4_ensembl_ancestral_57.coord_system;
+
+    3) Insert names and generate new seq_region_ids on the way (in this case we inherit a set from the previous release, but the syntax is the same for other sources):
+        INSERT INTO lg4_ensembl_ancestral_58.seq_region (name, length, coord_system_id)
+            SELECT ss.name, ss.length, ss.coord_system_id FROM lg4_ensembl_ancestral_57.seq_region ss WHERE ss.name like 'Ancestor_450_%';
+
+    4) Use the seq_region_ids generated on previous step and insert them with the dna sequences:
+            INSERT INTO lg4_ensembl_ancestral_58.dna (seq_region_id, sequence)
+                SELECT ts.seq_region_id, sd.sequence FROM lg4_ensembl_ancestral_57.dna sd
+                                                    JOIN lg4_ensembl_ancestral_57.seq_region ss ON sd.seq_region_id=ss.seq_region_id
+                                                    JOIN lg4_ensembl_ancestral_58.seq_region ts ON ss.name=ts.name;c
+# 2min, 26min, 25min in rel.58
+
+    5) Repeat steps (3) & (4) for all other sources
+
+    6) Check that you have done it correctly:
+        SELECT left(name,12) na, count(*), min(seq_region_id), max(seq_region_id), max(seq_region_id)-min(seq_region_id)+1 FROM seq_region GROUP BY na;
+
+======================================
+
+
+10.4 Merging GeneTrees+Families+NCTrees together is now done by running a mini-pipeline.
+
+    Go to ensembl-compara/modules/Bio/EnsEMBL/Compara/PipeConfig and open the PipeConfig file MergeHomologySideTogether_conf.pm
+    
+    It has 6 sections for connecting to databases where you will have to change the names of the databases and possibly their locations:
+        pipeline_db  - is your intermediate target (all protein side pipelines merged together)
+        master_db    - is the main compara master
+        prevrel_db   - should point to the previous release database
+        genetrees_db - should point to the current GeneTrees pipeline database
+        families_db  - should point to the current Families pipeline database
+        nctrees_db   - should point to the current ncRNAtrees pipeline database
+
+    Save the changes, exit the editor and run init_pipeline.pl with this file:
+        init_pipeline.pl MergeHomologySideTogether_conf.pm -password <our_most_secret_password>
+
+    Then run both -sync and -loop variations of the beekeeper.pl command suggested by init_pipeline.pl .
+    This pipeline will create a database with protein side pipeline databases merged together.
+
+
+10.5 Final merger of "protein side" into the release database is done by running another mini-pipeline.
+
+    Go to (or stay in) ensembl-compara/modules/Bio/EnsEMBL/Compara/PipeConfig and open the PipeConfig file MergeHomologyIntoRelease_conf.pm
+    
+    It has 3 sections for connecting to databases where you will have to change the names of the databases and possibly their locations:
+        pipeline_db        - is a hive database that is only used for job tracking - it may/should be removed right after the pipeline is done
+        merged_homology_db - is the result of the previous step (protein side databases merged together)
+        rel_db             - is the main release database
+
+    Save the changes, exit the editor and run init_pipeline.pl with this file:
+        init_pipeline.pl MergeHomologyIntoRelease_conf.pm -password <our_most_secret_password>
+
+    Then run both -sync and -loop variations of the beekeeper.pl command suggested by init_pipeline.pl .
+    This pipeline will merge the protein side tables into the main release database.
+
+10.6 Cleanup and CVS commit
+
+    After you are happy about the result of both mergers
+    you can drop both "compara_homology_merged" and "compara_full_merge" databases.
+
+    Also, please commit the changes to the PipeConfig files that you have made.
+
+11. Drop method_link_species_set entries for alignments which did not make it.
+
+11.5 Check for method_links that do not have a corresponding method_link_species_set:
+    SELECT ml.* FROM method_link ml LEFT JOIN method_link_species_set mlss ON ml.method_link_id=mlss.method_link_id WHERE mlss.method_link_id IS NULL;
+In most cases they can be removed, but check with other members of Compara.
+
+Removal of redundant method_link entries:
+    DELETE ml FROM method_link ml LEFT JOIN method_link_species_set mlss ON ml.method_link_id=mlss.method_link_id WHERE mlss.method_link_id IS NULL;
+
+
+12. Updating member.display_label and member.description fields for the members generated by EnsEMBL prediction.
+
+This step has to happen ASAP, but AFTER the Core name projections have been done. And before you analyze/optimize the tables.
+(1. Albert runs the Homology pipeline
+ 2. The homology database is given to Rhoda, who uses it to run name projections on Core databases (display_labels and gene_descriptions change in Core databases)
+ 3. We use the information in Core databases (derived from Homology, i.e. Compara) to fix the display_labels and gene_descriptions for Compara
+!MAKE SURE YOU ARE IN SYNC WITH THE REST OF THE WORLD!
+)
+
+I made a backup of the member table before starting:
+RENAME TABLE member TO member_orig;
+CREATE TABLE member LIKE member_orig;
+INSERT INTO member SELECT * FROM member_orig;
+
+12.1 Ensure your registry is correct
+
+The registry file which is used should point to the server where all updated
+Xref projections are located. This will mean staging servers 1 and 2. To load
+the data from these two servers you can use the 
+Bio::EnsEMBL::Registry->load_registry_from_multiple_dbs() call on both servers.
+
+12.2 Run the command
+
+bsub -o populate_member_display_labels.out -e populate_member_display_labels.err -R "select[mem>5000] rusage[mem=5000]" -M5000000 perl ~/src/ensembl_main/ensembl-compara/scripts/pipeline/populate_member_display_labels.pl --registry reg_conf59 --compara compara_59 --verbose
+
+This will iterate over all GenomeDBs and update any label which is empty. Should
+you wish to replace existing labels then rerun with the -replace switch. 
+
+Remember to DROP TABLE member_orig if made a backup.
+
+13. Run the healthchecks:
+
+13.1 Run the healthchecks for ancestral database:
+
+    time ./run-healthcheck.sh -d lg4_ensembl_ancestral_58 compara-ancestral
+
+13.2 Update the max_alignment_length. You can use the corresponding healthcheck with the -repair option:
+
+    time ./run-healthcheck.sh -d lg4_ensembl_compara_58 -type compara -repair Meta
+
+13.3 Now run the remaining healthchecks:
+
+    time ./run-healthcheck.sh -d lg4_ensembl_compara_58 -type compara -d2 .+_core_58_.+ compara_external_foreign_keys
+# rel.58:   22m
+# in rel.57 it took ?? minutes ('genbank common name' for 4 species had to be copied from their 'ensembl common name' in ncbi_taxa_name table)
+# in rel.pre57 it took 20 minutes (all passed).
+# in rel.56 everything passed apart from CheckTaxon - according to Javier in this particular case it was not a problem
+
+    time ./run-healthcheck.sh -d lg4_ensembl_compara_58 -type compara compara_genomic
+# rel.58:   47m, 7 failures
+
+    time ./run-healthcheck.sh -d lg4_ensembl_compara_58 -type compara compara_homology
+# rel.58:   14m, 5 failures
+
+...and correct mismatches if any!
+
+
+14. Ask the release coordinator to point the test web server to the compara DB.
+
+Upon confirmation from the release coordinator ask other members of Compara to go to
+    http://staging.ensembl.org/
+and check their data.
+
+
+15. Run ANALYZE TABLE and OPTIMIZE TABLE commands for both databases produced
+#
+# This is required for the CopyDbOverServer script to work properly.
+# So if you (suspect that you) have changed anything in the database, do run these two commands just in case -
+# a dry run of each doesn't even take a minute.
+
+time mysqlcheck --analyze --verbose --host=compara4 --port=3306 --user=ensadmin --password=ensembl --databases lg4_ensembl_compara_58
+# rel.58    3min
+# rel.57    9+4+5min
+# rel.pre57 30+105min
+# rel.56    12min
+
+time mysqlcheck --optimize --verbose --host=compara4 --port=3306 --user=ensadmin --password=ensembl --databases lg4_ensembl_compara_58
+# rel.57    2+1.6 hours
+# rel.pre57 : took several iterations (not all tables were MyISAM initially), last one 132min.
+# rel.56    2.5 hours
+
+time mysqlcheck --analyze --verbose --host=compara1 --port=3306 --user=ensadmin --password=ensembl --databases lg4_ensembl_ancestral_58
+# rel.57    took seconds to complete
+
+time mysqlcheck --optimize --verbose --host=compara1 --port=3306 --user=ensadmin --password=ensembl --databases lg4_ensembl_ancestral_58
+# rel.57    took seconds to complete
+
+
+16. WHEN EVERYBODY IS HAPPY ABOUT THE DATABASES, actually copy them to the two staging servers
+This is done by a strange script with a clumsy interface, but take heart:
+
+16.1. First, ssh into the DESTINATION machine:
+
+    # NB: ask for the password on staging well in advance - there may be noone around you at the right moment!
+ssh mysqlens@ens-staging
+
+    # switch shells, as it is running tcsh by default
+bash
+
+16.2. Create a file that will contain one line with the source/destination parameters, like this:
+
+cat <<EOF >/tmp/lg4_ensembl_compara_58.copy_options
+#from_host      from_port   from_dbname                 to_host         to_port     to_dbname
+#
+compara1        3306        lg4_ensembl_compara_58      ens-staging     3306        ensembl_compara_58
+compara1        3306        lg4_ensembl_ancestral_58    ens-staging     3306        ensembl_ancestral_58
+EOF
+
+
+16.3. Run the script to actually copy the data:
+
+time perl ~lg4/work/ensembl/misc-scripts/CopyDBoverServer.pl -pass ensembl \
+        -noflush /tmp/lg4_ensembl_compara_58.copy_options > /tmp/lg4_ensembl_compara_58.copy.err 2>&1
+
+# copying of rel_56 took 2 hours (SUCCESSFUL for both databases - you should check the output file)
+# copying of ensembl_compara_pre57 took 2 hours (SUCCESSFUL)
+# copying of ensembl_compara_57 took 2 hours (SUCCESSFUL)
+# copying of ensembl_ancestral_57 took 20 minutes (only SUCCESSFUL after analyzing/optimizing)
+# copying of ensembl_compara_58 and ensembl_ancestral_58 together took 1:30h (SUCCESSFUL)
+
+16.4 Do the same thing in parallel on ens-staging2 :
+
+ssh mysqlens@ens-staging2
+
+bash
+
+# NB: the ancestral database doesn't need to be copied to the second staging server
+
+cat <<EOF >/tmp/lg4_ensembl_compara_58.copy_options
+#from_host      from_port   from_dbname                 to_host         to_port     to_dbname
+#
+compara1        3306        lg4_ensembl_compara_58      ens-staging2     3306        ensembl_compara_58
+EOF
+
+time perl ~lg4/work/ensembl/misc-scripts/CopyDBoverServer.pl -pass ensembl \
+        -noflush /tmp/lg4_ensembl_compara_58.copy_options > /tmp/lg4_ensembl_compara_58.copy.err 2>&1
+# copying of ensembl_compara_58 took 1:15h (SUCCESSFUL)
+
+
+#### At this point you are "handing over the databases" to the person running Compara Mart (usually Rhoda).
+#### Let the main Release Coordinator and Rhoda know about it.
+#### But your job is not over yet! Carry on:
+
+
+17. Dump both the current and the previous release schemas and compare them.
+
+17.1 Create a patch to convert a compara DB from the previous release to the new one.
+
+# The patch should include at least an update of the schema_version in the meta table!
+#
+mysqldump --defaults-group-suffix=_compara4 --no-data --skip-add-drop-table lg4_ensembl_compara_57 | sed 's/AUTO_INCREMENT=[0-9]*\b//' >old_schema.sql
+mysqldump --defaults-group-suffix=_compara4 --no-data --skip-add-drop-table lg4_ensembl_compara_58 | sed 's/AUTO_INCREMENT=[0-9]*\b//' >new_schema.sql
+#
+sdiff -b old_schema.sql new_schema.sql | less
+#
+# (create the patch_57_58.sql file by hand)
+
+17.2 Generate an empty database from the old schema, apply the patch, dump it, and check that you get the new schema.
+
+mysql --defaults-group-suffix=_compara4 -e 'create database lg4_schema_patch_test'
+mysql --defaults-group-suffix=_compara4 lg4_schema_patch_test < old_schema.sql
+mysql --defaults-group-suffix=_compara4 lg4_schema_patch_test < patch_57_58.sql
+mysqldump --defaults-group-suffix=_compara4 --no-data --skip-add-drop-table lg4_schema_patch_test | sed 's/AUTO_INCREMENT=[0-9]*\b//' >patched_old_schema.sql
+#
+sdiff -bs patched_old_schema.sql new_schema.sql | less
+
+17.3 CVS commit the patch.
+
+
+18. Update the files in the ~ensembl-compara/sql directory:
+
+cd PATH_TO/ensembl-compara/sql/
+
+mysql --defaults-group-suffix=_compara1 -N -e "SELECT * FROM genome_db order by genome_db_id asc" lg4_ensembl_compara_58 > genome_db.txt
+mysql --defaults-group-suffix=_compara1 -N -e "SELECT * FROM method_link order by method_link_id asc" lg4_ensembl_compara_58 > method_link.txt
+
+# You will have to change the default schema_version in the table.sql file (last line of the file)
+
+# CVS commit these files.
+
+
+19. Update files in public-plugins/ensembl/htdocs/info/docs/compara
+
+You might need to update the create_mlss_table.conf file with new species added.
+Or you can use the order of species given in the species tree:
+
+  ~lg4/work/ensembl-compara/docs/create_mlss_table.pl \
+    --reg_conf ~/release_58/reg_conf.pl --dbname compara_58 --method_link PECAN \
+    --list --species_tree ~lg4/work/ensembl-compara/scripts/pipeline/species_tree_blength.nh > pecan.inc
+
+  ~lg4/work/ensembl-compara/docs/create_mlss_table.pl \
+    --reg_conf ~/release_58/reg_conf.pl --dbname compara_58 --method_link EPO \
+    --list --species_tree ~lg4/work/ensembl-compara/scripts/pipeline/species_tree_blength.nh > epo.inc
+
+  ~lg4/work/ensembl-compara/docs/create_mlss_table.pl \
+    --reg_conf ~/release_58/reg_conf.pl --dbname compara_58 --method_link EPO_LOW_COVERAGE \
+    --list --species_tree ~lg4/work/ensembl-compara/scripts/pipeline/species_tree_blength.nh > epo_lc.inc
+
+  ~lg4/work/ensembl-compara/docs/create_mlss_table.pl \
+    --reg_conf ~/release_58/reg_conf.pl --dbname compara_58 --method_link TRANSLATED_BLAT_NET \
+    --trim --species_tree ~lg4/work/ensembl-compara/scripts/pipeline/species_tree_blength.nh > tblat_net.inc
+
+# for blastz_net produce a simple list, because the table is getting too big:
+  ~lg4/work/ensembl-compara/docs/create_mlss_table.pl \
+    --reg_conf ~/release_58/reg_conf.pl --dbname compara_58 --method_link BLASTZ_NET \
+    --blastz_list --species_tree ~lg4/work/ensembl-compara/scripts/pipeline/species_tree_blength.nh > blastz_net.inc
+
+  ~lg4/work/ensembl-compara/docs/create_mlss_table.pl \
+    --reg_conf ~/release_58/reg_conf.pl --dbname compara_58 --method_link SYNTENY \
+    --trim --species_tree ~lg4/work/ensembl-compara/scripts/pipeline/species_tree_blength.nh > synteny.inc
+
+CVS commit these files.
+
+
+20. Update the schema and tutorial documentation files compara_schema.html and compara_tutorial.html in this directory:
+    ensembl-webcode/htdocs/info/docs/api/compara/
+    (previously - public-plugins/ensembl/htdocs/info/docs/api/compara )
+
+CVS commit the changes.
+
+
+21. Remind Javier to do the DNA part of the dumps.
+
+
+22. Run the pipelines for dumping GeneTrees and ncRNAtrees yourself:
+
+22a. Go to ensembl-compara/modules/Bio/EnsEMBL/Compara/PipeConfig and open the PipeConfig file DumpTrees_conf.pm
+
+    Check that you are happy about all parameters:
+        rel             being the current release number (sometimes this is the only thing to change),
+        rel_db          pointing at the release database,
+        target_dir      suitable for creating and storing the dumps in
+    If not happy, edit the changes, save the config file and exit the editor.
+
+    Run init_pipeline.pl with this file:
+        init_pipeline.pl DumpTrees_conf.pm -tree_type gene_trees -password <our_most_secret_password>
+
+    Then run both -sync and -loop variations of the beekeeper.pl command suggested by init_pipeline.pl .
+    This pipeline will produce gene_tree dumps in the directory pointed at by 'target_dir' parameter.
+
+# rel_60: took 5 hours on a "bad lustre" day. On one of such days you're better off pointing at your home directory!
+    
+22b. Stay in the same directory, but now create another pipeline from the same config file:
+        init_pipeline.pl DumpTrees_conf.pm -tree_type ncrna_trees -password <our_most_secret_password>
+
+    Then run both -sync and -loop variations of the beekeeper.pl command suggested by init_pipeline.pl .
+    This pipeline will produce ncrna_tree dumps in the directory pointed at by 'target_dir' parameter.
+
+# rel_60: took 8 minutes. The other extreme.
+
+22c. Commit the DumpTrees_conf.pm file into the CVS if you'd like to keep the changes.
+
+22d. Report the locations of the dumps to the main Release Coordinator and/or the web people.
+

@@ -1,0 +1,14 @@
+/EXAMPLE.use_mapping.pl/1.5/Thu Nov 19 14:01:28 2009//Tbranch-ensembl-60
+/README/1.10/Thu Apr 23 14:13:25 2009//Tbranch-ensembl-60
+/align_by_clone_identity.pl/1.6/Thu Nov 19 14:01:28 2009//Tbranch-ensembl-60
+/align_nonident_regions.pl/1.8/Thu Nov 19 14:01:28 2009//Tbranch-ensembl-60
+/align_nonident_regions_wrapper.pl/1.4/Thu Nov 19 14:01:28 2009//Tbranch-ensembl-60
+/blastz_matrix.txt/1.1/Thu Apr 13 08:41:18 2006//Tbranch-ensembl-60
+/check_mapping.pl/1.7/Thu Nov 19 14:01:28 2009//Tbranch-ensembl-60
+/cleanup_tmp_tables.sql/1.1/Thu Apr 23 14:14:01 2009//Tbranch-ensembl-60
+/compare_assemblies.pl/1.6/Thu Nov 19 14:01:28 2009//Tbranch-ensembl-60
+/find_overlaps.pl/1.2/Thu Nov 19 14:01:28 2009//Tbranch-ensembl-60
+/fix_overlaps.pl/1.6/Thu Nov 19 14:01:28 2009//Tbranch-ensembl-60
+/load_alternative_assembly.pl/1.7/Thu Nov 19 14:01:28 2009//Tbranch-ensembl-60
+/mapping_stats.pl/1.7/Thu Nov 19 14:01:28 2009//Tbranch-ensembl-60
+D

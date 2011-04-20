@@ -1,0 +1,15 @@
+/bio_ens.pm/1.12/Mon Aug 16 12:23:55 2010//Tbranch-ensembl-60
+/bio_ens_analysis.pm/1.6/Mon Aug 16 12:23:55 2010//Tbranch-ensembl-60
+/bio_ens_exon.pm/1.8/Mon Aug 16 12:23:55 2010//Tbranch-ensembl-60
+/bio_ens_featurePair.pm/1.10/Mon Aug 16 12:23:55 2010//Tbranch-ensembl-60
+/bio_ens_gene.pm/1.6/Mon Aug 16 12:23:55 2010//Tbranch-ensembl-60
+/bio_ens_hit.pm/1.5/Mon Aug 16 12:23:55 2010//Tbranch-ensembl-60
+/bio_ens_hsp.pm/1.5/Mon Aug 16 12:23:55 2010//Tbranch-ensembl-60
+/bio_ens_predictionExon.pm/1.5/Mon Aug 16 12:23:55 2010//Tbranch-ensembl-60
+/bio_ens_predictionGene.pm/1.5/Mon Aug 16 12:23:55 2010//Tbranch-ensembl-60
+/bio_ens_seqFeature.pm/1.9/Mon Aug 16 12:23:55 2010//Tbranch-ensembl-60
+/bio_ens_transcript.pm/1.6/Mon Aug 16 12:23:55 2010//Tbranch-ensembl-60
+/ens_bio.pm/1.4/Mon Aug 16 12:23:55 2010//Tbranch-ensembl-60
+/ens_bio_featurePair.pm/1.4/Mon Aug 16 12:23:55 2010//Tbranch-ensembl-60
+/ens_bio_seqFeature.pm/1.4/Mon Aug 16 12:23:55 2010//Tbranch-ensembl-60
+D

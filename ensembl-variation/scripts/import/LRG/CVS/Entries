@@ -1,0 +1,14 @@
+/LRG.pm/1.22/Thu Aug 26 09:17:41 2010//Tbranch-ensembl-60
+/LRG.rnc/1.6/Wed Mar 17 16:29:07 2010//Tbranch-ensembl-60
+/LRGHealthcheck.pm/1.6/Fri Jun 18 15:02:56 2010//Tbranch-ensembl-60
+/LRGImport.pm/1.13/Mon Nov  1 11:55:34 2010//Tbranch-ensembl-60
+/LRGMapping.pm/1.20/Mon Nov  1 11:56:45 2010//Tbranch-ensembl-60
+/LRG_to_HGNC.pl/1.2/Fri Apr 30 10:04:54 2010//Tbranch-ensembl-60
+/check.lrg.pl/1.2/Fri Apr 30 09:48:04 2010//Tbranch-ensembl-60
+/import.lrg.pl/1.22/Mon Nov  1 11:54:57 2010//Tbranch-ensembl-60
+/lrg2gff.pl/1.4/Thu Oct 14 13:03:59 2010//Tbranch-ensembl-60
+/lrg2html.xsl/1.19/Fri Oct  1 12:52:07 2010//Tbranch-ensembl-60
+/lrg2txt.xsl/1.1/Tue Mar 31 15:59:32 2009//Tbranch-ensembl-60
+/make.lrg.pl/1.17/Mon Aug  9 13:47:38 2010//Tbranch-ensembl-60
+/merge_annotation.pl/1.2/Fri Apr 30 10:01:08 2010//Tbranch-ensembl-60
+D
