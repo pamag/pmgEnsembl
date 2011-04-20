@@ -1,8 +1,8 @@
-/Coordinate.pm/1.14/Mon Aug 16 12:23:54 2010//Tbranch-ensembl-60
-/Gap.pm/1.12/Mon Aug 16 12:23:54 2010//Tbranch-ensembl-60
-/IndelCoordinate.pm/1.7/Mon Aug 16 12:23:54 2010//Tbranch-ensembl-60
-/IndelPair.pm/1.6/Mon Aug 16 12:23:54 2010//Tbranch-ensembl-60
-/Pair.pm/1.10/Mon Aug 16 12:23:54 2010//Tbranch-ensembl-60
-/RangeRegistry.pm/1.16/Fri Aug 27 16:00:31 2010//Tbranch-ensembl-60
-/Unit.pm/1.10/Mon Aug 16 12:23:54 2010//Tbranch-ensembl-60
+/Coordinate.pm/1.15/Wed Jan  5 15:10:10 2011//Tbranch-ensembl-62
+/Gap.pm/1.13/Wed Jan  5 15:10:10 2011//Tbranch-ensembl-62
+/IndelCoordinate.pm/1.8/Wed Jan  5 15:10:10 2011//Tbranch-ensembl-62
+/IndelPair.pm/1.7/Wed Jan  5 15:10:10 2011//Tbranch-ensembl-62
+/Pair.pm/1.11/Wed Jan  5 15:10:10 2011//Tbranch-ensembl-62
+/RangeRegistry.pm/1.17/Wed Jan  5 15:10:10 2011//Tbranch-ensembl-62
+/Unit.pm/1.11/Wed Jan  5 15:10:10 2011//Tbranch-ensembl-62
 D

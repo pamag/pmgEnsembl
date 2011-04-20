@@ -23,6 +23,8 @@ use strict;
 use Bio::EnsEMBL::Utils::Exception qw(throw warning deprecate);
 use Bio::EnsEMBL::Compara::NestedSet;
 use Bio::EnsEMBL::DBSQL::BaseAdaptor;
+use Bio::EnsEMBL::Utils::SqlHelper;
+use Bio::EnsEMBL::DBSQL::DBConnection;
 
 our @ISA = qw(Bio::EnsEMBL::DBSQL::BaseAdaptor);
 
@@ -316,6 +318,10 @@ sub store {
 =head2 sync_tree_leftright_index
 
   Arg [1]    : Bio::EnsEMBL::Compara::NestedSet $root
+  Arg [2]    : Boolean; indicates if you wish to use a fresh database 
+               connection to perform any locking. If you are within an existing
+               transaction this is a good idea to avoid locking the LR table
+               for the duration of your transaction
   Example    : $nsa->sync_tree_leftright_index($root);
   Description: For the given root this method looks for left right index
                offset recorded in lr_index_offset for the configured
@@ -332,66 +338,61 @@ sub store {
 =cut
 
 sub sync_tree_leftright_index {
-	my ($self, $tree_root) = @_;
-	my $starting_lr_index = $self->_get_starting_lr_index($tree_root);
-	$tree_root->build_leftright_indexing($starting_lr_index);
-	return;
+  my ($self, $tree_root, $use_fresh_connection) = @_;
+  my $starting_lr_index = $self->_get_starting_lr_index($tree_root, $use_fresh_connection);
+  $tree_root->build_leftright_indexing($starting_lr_index);
+  return;
 }
 
-# Rather than the old algorithm this uses the lr_index_offset table to
-# lock on & to record the current max lr index for a given table.
-# Offset is pre-calculated by taking the number of nodes in the tree
-# and multiplying by 2. This is then stored & passed back to
-# sync_tree_leftright_index()
-
+##
+## Offset is pre-calculated by taking the number of nodes in the tree
+## and multiplying by 2. This is then stored & passed back to
+## sync_tree_leftright_index()
+##
 sub _get_starting_lr_index {
-	my ($self, $tree_root) = @_;
+  my ($self, $tree_root, $use_fresh_connection) = @_;
 
-	my $starting_lr_index;
-	my $table = $self->_lr_table_name();
+  my $table = $self->_lr_table_name();
+  my $node_count = scalar(@{$tree_root->get_all_nodes()});
+  my $lr_ids_needed = $node_count*2;
+  
+  my $select_sql = 'SELECT lr_index_offset_id, lr_index FROM lr_index_offset WHERE table_name =? FOR UPDATE';
+  my $update_sql = 'UPDATE lr_index_offset SET lr_index =? WHERE lr_index_offset_id =?';
 
-	my $node_count = scalar(@{$tree_root->get_all_nodes()});
-	my $lr_ids_needed = $node_count*2;
+  my $conn = ($use_fresh_connection) ?
+    Bio::EnsEMBL::DBSQL::DBConnection->new(-DBCONN => $self->dbc()) :
+    $self->dbc();
+  my $h = Bio::EnsEMBL::Utils::SqlHelper->new(-DB_CONNECTION => $conn);
 
-	my $original_dwi = $self->dbc()->disconnect_when_inactive();
-	$self->dbc()->disconnect_when_inactive(0);
+  my $starting_lr_index;
+  #Retry because this *cannot* fail due to NJTREE -> QuickTreeBreak flow
+  $h->transaction(
+    -RETRY => 3,
+    -CONDITION => sub {
+      my ($error) = @_;
+      return ( $error =~ /deadlock/i ) ? 1 : 0;
+    },
+    -CALLBACK => sub {
+      my $rows = $h->execute(-SQL => $select_sql, -PARAMS => [$table]);
+      if(!@{$rows}) {
+        throw("The table '${table}' does not have an entry in lr_index_offset");
+      }
+      my ($id, $max) = @{$rows->[0]};
+      $starting_lr_index = $max+1;
+      my $new_max = $max+$lr_ids_needed;
+      $h->execute_update(-SQL => $update_sql, -PARAMS => [$new_max, $id]);
+      return;
+    }
+  );
+  
+  $conn->disconnect_if_idle() if($use_fresh_connection);
 
-	eval {
-		$self->dbc->do("LOCK TABLES lr_index_offset WRITE");
-
-		my $sth = $self->prepare('select max(lr_index) from lr_index_offset where table_name =?');
-		$sth->execute($table);
-		my ($max_lr_index) = $sth->fetchrow_array();
-		$sth->finish();
-
-		my $sql;
-		my $new_max_lr_index;
-		if(defined $max_lr_index) {
-			$sql = 'update lr_index_offset set lr_index =? where table_name =?';
-			$starting_lr_index = $max_lr_index+1;
-			$new_max_lr_index = $max_lr_index+$lr_ids_needed;
-		}
-		else {
-			$sql = 'insert into lr_index_offset (lr_index, table_name) values (?,?)';
-			$starting_lr_index = 1;
-			$new_max_lr_index = $lr_ids_needed;
-		}
-
-		$sth = $self->prepare($sql);
-		$sth->execute($new_max_lr_index, $table);
-		$sth->finish();
-
-		$self->dbc->do("UNLOCK TABLES");
-	};
-	$self->dbc()->disconnect_when_inactive($original_dwi);
-	throw("Problem occured whilst getting next lr index for $table: $@") if $@;
-
-	return $starting_lr_index;
+  return $starting_lr_index;
 }
 
 sub _lr_table_name {
-	my ($self) = @_;
-	return $self->tables->[0]->[0];
+  my ($self) = @_;
+  return $self->tables->[0]->[0];
 }
 
 ##################################

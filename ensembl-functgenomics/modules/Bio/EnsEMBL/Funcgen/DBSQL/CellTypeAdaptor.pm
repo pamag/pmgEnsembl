@@ -1,7 +1,25 @@
 #
 # Ensembl module for Bio::EnsEMBL::Funcgen::DBSQL::CellTypeAdaptor
 #
-# You may distribute this module under the same terms as Perl itself
+
+=head1 LICENSE
+
+  Copyright (c) 1999-2011 The European Bioinformatics Institute and
+  Genome Research Limited.  All rights reserved.
+
+  This software is distributed under a modified Apache license.
+  For license details, please see
+
+    http://www.ensembl.org/info/about/code_licence.html
+
+=head1 CONTACT
+
+  Please email comments or questions to the public Ensembl
+  developers list at <ensembl-dev@ebi.ac.uk>.
+
+  Questions may also be sent to the Ensembl help desk at
+  <helpdesk@ensembl.org>.
+
 
 =head1 NAME
 
@@ -10,28 +28,15 @@ storing Funcgen CellType objects.
 
 =head1 SYNOPSIS
 
-my $ct_adaptor = $db->get_CellTypeAdaptor();
+my $ct_adaptor = $efgdba->get_CellTypeAdaptor();
 
-my $cell_type = $ct_adaptor->fetch_by_name("U2OS");
-#my @cell_types = $st_adaptor->fetch_all_by_type("TISSUE");
+my $cell_type = $ct_adaptor->fetch_by_name("HeLa");
 
 
 =head1 DESCRIPTION
 
 The CellTypeAdaptor is a database adaptor for storing and retrieving
 Funcgen CellType objects.
-
-=head1 AUTHOR
-
-This module was created by Nathan Johnson.
-
-This module is part of the Ensembl project: http://www.ensembl.org/
-
-=head1 CONTACT
-
-Post comments or questions to the Ensembl development list: ensembl-dev@ebi.ac.uk
-
-=head1 METHODS
 
 =cut
 
@@ -54,7 +59,7 @@ use vars qw(@ISA);
 
   Arg [1]    : string - name of CellType
   Arg [1]    : optional string - class of CellType
-  Example    : my $ct = $ct_adaptor->fetch_by_name('U2OS');
+  Example    : my $ct = $ct_adaptor->fetch_by_name('HeLa');
   Description: Retrieves CellType objects by name.
   Returntype : Bio::EnsEMBL::Funcgen::CellType object
   Exceptions : Throws no name given

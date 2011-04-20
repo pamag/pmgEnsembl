@@ -1,27 +1,13 @@
-#!/software/bin/perl -w
-
-
-=head1 NAME
-
-sam2bed.pl
-
-=head1 SYNOPSIS
-
- sam2bed.pl [ file.sam[.gz] ]+
-
-=head1 DESCRIPTION
-
-This script loads converts sam(inc gzipped) format files to a bed format files.
-Unampped reads are filtered as appropriate and the MAPQ score is used as the bed score.
-
+#!/usr/bin/env perl
 
 =head1 LICENSE
 
-  Copyright (c) 1999-2009 The European Bioinformatics Institute and
+  Copyright (c) 1999-2011 The European Bioinformatics Institute and
   Genome Research Limited.  All rights reserved.
 
   This software is distributed under a modified Apache license.
-  For license details, please see:
+  For license details, please see
+
     http://www.ensembl.org/info/about/code_licence.html
 
 =head1 CONTACT
@@ -32,6 +18,18 @@ Unampped reads are filtered as appropriate and the MAPQ score is used as the bed
   Questions may also be sent to the Ensembl help desk at
   <helpdesk@ensembl.org>.
 
+=head1 NAME
+
+sam2bed.pl
+
+=head1 SYNOPSIS
+
+ sam2bed.pl [ -on_farm -man -help ] -files  (file.sam[.gz])+
+
+=head1 DESCRIPTION
+
+This script loads converts sam(inc gzipped) format files to a bed format files.
+Unampped reads are filtered as appropriate and the MAPQ score is used as the bed score.
 
 =cut
 
@@ -60,8 +58,8 @@ my @tmp_args = @ARGV;
 GetOptions (
 			"on_farm"    => \$on_farm,
 			"files=s{,}" => \@files,
-			'man'        => sub { pos2usage(-exitval => 0, -verbose => 2); },
-			'help'       => sub { pos2usage(-exitval => 0, -message => "Params are:\t@tmp_args"); }
+			'man'        => sub { pod2usage(-exitval => 0, -verbose => 2); },
+			'help'       => sub { pod2usage(-exitval => 0, -message => "Params are:\t@tmp_args"); }
 		   ) or pod2usage( -exitval => 1,
 						   -message => "Params are:\t@tmp_args"
 						 );

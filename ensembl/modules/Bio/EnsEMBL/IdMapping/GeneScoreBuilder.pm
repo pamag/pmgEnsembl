@@ -1,6 +1,6 @@
 =head1 LICENSE
 
-  Copyright (c) 1999-2010 The European Bioinformatics Institute and
+  Copyright (c) 1999-2011 The European Bioinformatics Institute and
   Genome Research Limited.  All rights reserved.
 
   This software is distributed under a modified Apache license.
@@ -413,9 +413,10 @@ sub biotype_gene_rescore {
                                 $entry->target );
 
     if ( $source_gene->biotype() ne $target_gene->biotype() ) {
-      #$self->logger->debug("biotype ".$entry->to_string."\n");
+      # PENALTY: The gene stable ID is now on a gene with a different
+      # biotype.
       $matrix->set_score( $entry->source(), $entry->target(),
-                          ( $entry->score()*0.25 ) );
+                          0.25*$entry->score() );
       $i++;
     }
   }

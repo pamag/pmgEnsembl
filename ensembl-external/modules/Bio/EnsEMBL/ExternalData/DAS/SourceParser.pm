@@ -45,7 +45,7 @@ use Bio::EnsEMBL::ExternalData::DAS::Source;
 use Bio::Das::Lite;
 use URI;
 
-our $GENOMIC_REGEX = '^chromosome|clone|contig|scaffold|genescaffold|supercontig|ultracontig|reftig|group$';
+our $GENOMIC_REGEX = '^chromosome|clone|contig|scaffold|genescaffold|supercontig|ultracontig|reftig|group|plasmid$';
 our @GENE_COORDS = (
   Bio::EnsEMBL::ExternalData::DAS::CoordSystem->new( -name => 'ensembl_gene', -label => 'Ensembl Gene Accession' ),
   Bio::EnsEMBL::ExternalData::DAS::CoordSystem->new( -name => 'entrezgene_acc', -label => 'Entrez Accession' ),
@@ -102,6 +102,12 @@ our %NON_GENOMIC_COORDS = (
                          'MGI'        => $GENE_COORDS{'mgi_acc'},
                          'MGI_Symbol' => $GENE_COORDS{'mgi'},
                          'Entrez'     => $GENE_COORDS{'entrezgene_acc'},
+                         'FlyBase Gene'    => $GENE_COORDS{'flybase_gene'},
+                         'WormBase Gene'   => $GENE_COORDS{'wormbase_gene'},
+                         'VectorBase Gene' => $GENE_COORDS{'vectorbase_gene'},
+                         'Gramene Gene'    => $GENE_COORDS{'gramene_gene'},
+                         'ENA Gene'        => $GENE_COORDS{'ena_gene'},
+                         'DictyBase'       => $GENE_COORDS{'dictybase_gene'},
                         },
   'Protein Sequence' => {
                          'Ensembl'    => $PROT_COORDS{'ensembl_peptide'},
@@ -196,6 +202,8 @@ sub fetch_Sources {
   my $self = shift;
   my ($server, $f_species, $f_name, $f_logic)
     = rearrange([ 'LOCATION', 'SPECIES', 'NAME', 'LOGIC_NAME' ], @_);
+
+  my $start = time();
   
   $server || throw('No DAS server specified');
   ($server, my $f_id) = $self->parse_das_string( $server );
@@ -216,26 +224,28 @@ sub fetch_Sources {
   
   # optional species filter
   if ( scalar @f_species ) {
-    info('Filtering by species');
     @sources = grep { my $source = $_; grep { !scalar @{$source->coord_systems} || $source->matches_species( $_ ) } @f_species } @sources;
+    info("After filtering by species '".(join '|', @f_species)."': ".scalar @sources.' sources');
   }
   
   # optional name filter
   if ( scalar @f_name ) {
-    info('Filtering by name');
     @sources = grep { my $source = $_; grep { $source->matches_name( $_ ) } @f_name  } @sources;
+    info('After filtering by name: '.scalar @sources.' sources');
   }
   
   # optional logic name filter
   if ( scalar @f_logic ) {
-    info('Filtering by logic_name');
     @sources = grep { my $source = $_; grep { $source->logic_name eq $_ } @f_logic  } @sources;
+    info('After filtering by logic_name: '.scalar @sources.' sources');
   }
   
   if ( $f_id ) {
-    info('Filtering by identifier (logic_name or dsn)');
     @sources = grep { $_->logic_name eq $f_id || $_->dsn eq $f_id } @sources;
+    info('After filtering by identifier (logic_name or dsn): '.scalar @sources.' sources');
   }
+
+  info('Parsed '.scalar @sources.' sources in '.(time() - $start).' seconds');
   
   return [sort { lc $a->label cmp lc $b->label } @sources];
 }
@@ -338,7 +348,7 @@ sub _parse_sources_output {
     my $description = $source->{'source_description'};
     my $email       = $source->{'maintainer'}[0]{'maintainer_email'};
     my $source_uri  = $source->{'source_uri'};
-    
+
     # Iterate over the <VERSION> elements
     for my $version (@{ $source->{'version'} || [] }) {
       
@@ -349,10 +359,14 @@ sub _parse_sources_output {
           last;
         }
       }
-      $dsn || next; # this source doesn't support features command
-      
+
       my $version_uri = $version->{'version_uri'};
-      info("Parsing source $version_uri");
+      if (!$dsn) {
+        info("Skipping $version_uri - does not support the features command");
+        next; # this source doesn't support features command
+      }
+      
+      info("Parsing source $version_uri from $server_url");
       
       # Now parse the coordinate systems and map to Ensembl's
       # This is the tedious bit, as some things don't map easily
@@ -362,6 +376,12 @@ sub _parse_sources_output {
         # Extract coordinate details
         my $auth    = $coord->{'coordinates_authority'};
         my $type    = $coord->{'coordinates_source'};
+
+        if (!$type || !$auth) {
+          warning("Unable to parse authority and sequence type for $version_uri ; skipping"); # Something went wrong!
+          next;
+        }
+
         # Version and species are optional:
         my $version = $coord->{'coordinates_version'};
         
@@ -369,20 +389,20 @@ sub _parse_sources_output {
         # mappings...
         my $cdata   = $coord->{'coordinates'};
         my (undef, undef, $species) = split /,/, $cdata, 3;
-        
-        if (!$type || !$auth) {
-          warning("Unable to parse authority and sequence type for $version_uri ; skipping"); # Something went wrong!
-          next;
-        }
-        
+
         if ( my $coord = $self->_parse_coord_system( $type, $auth, $version, $species ) ) {
           push @coords, $coord;
         }
       }
+
+      info("Source $version_uri has ".(scalar @coords)." supported coordinate systems");
+
+      # in case of full url we take just the last part
+      my $logic_name = (split '/', $source_uri)[-1];
       
       # Create the actual source
       my $source = Bio::EnsEMBL::ExternalData::DAS::Source->new(
-        -logic_name    => $source_uri,
+        -logic_name    => $logic_name,
         -url           => $url,
         -dsn           => $dsn,
         -label         => $title,
@@ -392,14 +412,14 @@ sub _parse_sources_output {
         -coords        => \@coords,
       );
       $count++;
-      
+
       $self->{'_sources'}{$server_url}{$source->full_url} ||= $source;
       
     } # end version loop
     
   } # end source loop
   
-  info("Found $count sources");
+  info("Found $count sources via sources command for $server_url");
   
   return undef;
 }
@@ -424,12 +444,16 @@ sub _parse_dsn_output {
   # Iterate over the <DSN> elements
   for my $hash (@{ $set }) {
     
+    my $dsn = $hash->{'source_id'};
+    
     my $source = Bio::EnsEMBL::ExternalData::DAS::Source->new(
       -url           => $server_url,
-      -dsn           => $hash->{'source_id'},
+      -dsn           => $dsn,
       -label         => $hash->{'source'},
       -description   => $hash->{'description'},
     );
+    
+    info("Parsing source $dsn from $server_url");
     
     $self->{'_sources'}{$server_url}{$source->full_url} ||= $source;
     $count++;
@@ -439,9 +463,10 @@ sub _parse_dsn_output {
       $source->coord_systems( $mapmaster->coord_systems );
     }
     
+    info("Source $dsn has ".(scalar @{ $source->coord_systems })." supported coordinate systems");
   }
   
-  info("Found $count sources");
+  info("Found $count sources via dsn command for $server_url");
   
   return undef;
   

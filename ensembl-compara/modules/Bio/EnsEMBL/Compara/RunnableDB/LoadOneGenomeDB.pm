@@ -57,8 +57,8 @@ sub fetch_input {
     my $self = shift @_;
 
     my $assembly_name = $self->param('assembly_name');
+    my $genebuild = $self->param('genebuild');
     my $core_dba;
-
     if(my $locator = $self->param('locator') ) {   # use the locator and skip the registry
 
         eval {
@@ -80,17 +80,19 @@ sub fetch_input {
 
             my $this_core_dba = Bio::EnsEMBL::Registry->get_DBAdaptor($species_name.$suffix_separator.$r_ind, 'core') || next;
             my $this_assembly = $this_core_dba->extract_assembly_name();
+	    my $this_start_date = $this_core_dba->get_MetaContainer->get_genebuild();
 
+            $genebuild ||= $this_start_date;
             $assembly_name ||= $this_assembly;
 
-            if($this_assembly eq $assembly_name) {
+            if($this_assembly eq $assembly_name && $this_start_date eq $genebuild) {
                 $core_dba = $this_core_dba;
 
                 if($self->param('first_found')) {
                     last;
                 }
             } else {
-                warn "Found assembly '$this_assembly' when looking for '$assembly_name'";
+                warn "Found assembly '$this_assembly' when looking for '$assembly_name' or '$this_start_date' when looking for '$genebuild'";
             }
 
         } # try next registry server
@@ -120,12 +122,7 @@ sub run {
 
     my $genebuild       = $meta_container->get_genebuild || '';
 
-    my $ncbi_biname     = $self->compara_dba->get_NCBITaxonAdaptor->fetch_node_by_taxon_id($taxon_id);
-    $ncbi_biname      &&= $ncbi_biname->binomial();
-    my $meta_biname     = $meta_container->get_Species();
-    $meta_biname      &&= $meta_biname->binomial();
-    my $genome_name     = ( ($species_name ne $ncbi_biname) and $self->param('ensembl_genomes') and $species_name ) || $ncbi_biname || $species_name || $meta_biname
-        || die "Could not figure out the genome_name, please investigate";
+    my $genome_name = $meta_container->get_production_name() or die "Could not fetch production_name, please investigate";
 
     my $genome_db       = Bio::EnsEMBL::Compara::GenomeDB->new();
     $genome_db->dbID( $genome_db_id );

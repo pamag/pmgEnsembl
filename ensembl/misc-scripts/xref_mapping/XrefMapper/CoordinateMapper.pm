@@ -1,11 +1,6 @@
 package XrefMapper::CoordinateMapper;
 
-#use vars '@ISA';
-#@ISA = qw{ XrefMapper::BasicMapper };
-
-#use XrefMapper::BasicMapper;
-
-# $Id: CoordinateMapper.pm,v 1.33 2010-01-28 10:01:47 ianl Exp $
+# $Id: CoordinateMapper.pm,v 1.36 2011-03-03 13:36:27 ak4 Exp $
 
 # This is a set of subroutines used for creating Xrefs based on
 # coordinate overlaps.
@@ -16,6 +11,8 @@ use warnings;
 
 use Bio::EnsEMBL::DBSQL::DBAdaptor;
 use Bio::EnsEMBL::Mapper::RangeRegistry;
+
+use DBI qw( :sql_types );
 
 use Carp;
 use IO::File;
@@ -58,9 +55,11 @@ sub run_coordinatemapping {
   my ( $self, $do_upload) = @_;
 
 
-  my $sth_stat = $self->xref->dbc->prepare("insert into process_status (status, date) values('coordinate_xrefs_started',now())");
+  my $sth_stat = $self->xref->dbc->prepare(
+                           "INSERT INTO process_status (status, date) "
+                         . "VALUES('coordinate_xrefs_started',now())" );
   $sth_stat->execute();
-  $sth_stat->finish;
+  $sth_stat->finish();
 
   my $xref_db = $self->xref();
   my $core_db = $self->core();
@@ -72,10 +71,12 @@ sub run_coordinatemapping {
 
   # We only do coordinate mapping for mouse and human for now.
   if ( !( $species eq 'mus_musculus' || $species eq 'homo_sapiens' ) ) {
-#  if ( !( $species eq 'mus_musculus') ) {
-    my $sth_stat = $self->xref->dbc->prepare("insert into process_status (status, date) values('coordinate_xref_finished',now())");
+    #  if ( !( $species eq 'mus_musculus') ) {
+    my $sth_stat = $self->xref->dbc->prepare(
+                          "INSERT INTO process_status (status, date) "
+                        . "VALUES ('coordinate_xref_finished',now())" );
     $sth_stat->execute();
-    $sth_stat->finish;
+    $sth_stat->finish();
     return;
   }
   print "species = $species ($species_id))\n";
@@ -136,7 +137,9 @@ sub run_coordinatemapping {
   );
 
   my $analysis_sth = $core_dbh->prepare($analysis_sql);
-  $analysis_sth->execute($analysis_params);
+  $analysis_sth->bind_param( 1, $analysis_params, SQL_VARCHAR );
+
+  $analysis_sth->execute();
 
   my $analysis_id = $analysis_sth->fetchall_arrayref()->[0][0];
   if ( !defined($analysis_id) ) {
@@ -177,13 +180,19 @@ sub run_coordinatemapping {
                        'SELECT MAX(analysis_id) FROM analysis')->[0][0];
         log_progress( "Last used analysis_id is %d\n", $analysis_id );
 
-        my $sql = 'INSERT INTO analysis '
-          . 'VALUES(?, now(), ?, \N, \N, \N, ?, \N, \N, ?, ?, \N, \N, \N)';
+        my $sql =
+            'INSERT INTO analysis '
+          . 'VALUES(?, now(), ?, \N, \N, \N, ?, '
+          . '\N, \N, ?, ?, \N, \N, \N)';
         my $sth = $core_dbh->prepare($sql);
 
-        $sth->execute( ++$analysis_id,   'XrefCoordinateMapping',
-                       'xref_mapper.pl', $analysis_params,
-                       'CoordinateMapper.pm' );
+        $sth->bind_param( 1, ++$analysis_id,          SQL_INTEGER );
+        $sth->bind_param( 2, 'XrefCoordinateMapping', SQL_VARCHAR );
+        $sth->bind_param( 3, 'xref_mapper.pl',        SQL_VARCHAR );
+        $sth->bind_param( 4, $analysis_params,        SQL_VARCHAR );
+        $sth->bind_param( 5, 'CoordinateMapper.pm',   SQL_VARCHAR );
+
+        $sth->execute();
       }
     } ## end else [ if ( defined($analysis_id...
   } ## end if ( !defined($analysis_id...
@@ -207,7 +216,9 @@ sub run_coordinatemapping {
   );
 
   my $xref_sth = $xref_dbh->prepare($xref_sql);
-  $xref_sth->execute($species_id);
+  $xref_sth->bind_param( 1, $species_id, SQL_INTEGER );
+
+  $xref_sth->execute();
 
   my $external_db_id;
 
@@ -216,7 +227,6 @@ sub run_coordinatemapping {
       $XrefMapper::BasicMapper::source_to_external_db{ $xref->{
         'source_id'} };
     $external_db_id ||= 11000;    # FIXME (11000 is 'UCSC')
-    
 
     $unmapped{ $xref->{'coord_xref_id'} } = {
                    'external_db_id' => $external_db_id,
@@ -256,9 +266,9 @@ sub run_coordinatemapping {
     FROM      coordinate_xref
     WHERE     species_id = ?
     AND       chromosome = ? AND strand   = ?
-    AND       ((txStart >= ? AND txStart <= ?)    -- txStart in region
-    OR         (txEnd   >= ? AND txEnd   <= ?)    -- txEnd in region
-    OR         (txStart <= ? AND txEnd   >= ?))   -- region is contained
+    AND       ((txStart BETWEEN ? AND ?)        -- txStart in region
+    OR         (txEnd   BETWEEN ? AND ?)        -- txEnd in region
+    OR         (txStart <= ? AND txEnd >= ?))   -- region is fully contained
     ORDER BY  accession
   );
 
@@ -345,11 +355,17 @@ sub run_coordinatemapping {
         #---------------------------------------------------------------
 
         my $sth = $xref_dbh->prepare_cached($sql);
-        $sth->execute( $species_id,        $chr_name,
-                       $gene->strand(),    $transcript->start(),
-                       $transcript->end(), $transcript->start(),
-                       $transcript->end(), $transcript->start(),
-                       $transcript->end() );
+        $sth->bind_param( 1, $species_id,          SQL_INTEGER );
+        $sth->bind_param( 2, $chr_name,            SQL_VARCHAR );
+        $sth->bind_param( 3, $gene->strand(),      SQL_INTEGER );
+        $sth->bind_param( 4, $transcript->start(), SQL_INTEGER );
+        $sth->bind_param( 5, $transcript->end(),   SQL_INTEGER );
+        $sth->bind_param( 6, $transcript->start(), SQL_INTEGER );
+        $sth->bind_param( 7, $transcript->end(),   SQL_INTEGER );
+        $sth->bind_param( 8, $transcript->start(), SQL_INTEGER );
+        $sth->bind_param( 9, $transcript->end(),   SQL_INTEGER );
+
+        $sth->execute();
 
         my ( $coord_xref_id, $accession, $txStart, $txEnd, $cdsStart,
              $cdsEnd, $exonStarts, $exonEnds );
@@ -588,7 +604,7 @@ sub run_coordinatemapping {
   dump_xref( $xref_filename, $xref_id, \%mapped, \%unmapped );
   dump_object_xref( $object_xref_filename, $object_xref_id, \%mapped );
   dump_unmapped_reason( $unmapped_reason_filename, $unmapped_reason_id,
-                        \%unmapped );
+                        \%unmapped, $core_dbh );
   dump_unmapped_object( $unmapped_object_filename, $unmapped_object_id,
                         $analysis_id, \%unmapped );
 
@@ -603,9 +619,11 @@ sub run_coordinatemapping {
     upload_data( 'xref', $xref_filename, $external_db_id, $core_dbh );
   }
 
-  $sth_stat = $self->xref->dbc->prepare("insert into process_status (status, date) values('coordinate_xref_finished',now())");
+  $sth_stat = $self->xref->dbc->prepare(
+                          "INSERT INTO process_status (status, date) "
+                        . "VALUES ('coordinate_xref_finished',now())" );
   $sth_stat->execute();
-  $sth_stat->finish;
+  $sth_stat->finish();
 
   $self->biomart_fix("UCSC","Translation","Gene");
   $self->biomart_fix("UCSC","Transcript","Gene");
@@ -688,7 +706,7 @@ sub dump_object_xref {
 #-----------------------------------------------------------------------
 
 sub dump_unmapped_reason {
-  my ( $filename, $unmapped_reason_id, $unmapped ) = @_;
+  my ( $filename, $unmapped_reason_id, $unmapped, $core_dbh ) = @_;
 
   ######################################################################
   # Dump for 'unmapped_reason'.                                        #
@@ -711,11 +729,30 @@ sub dump_unmapped_reason {
 
   log_progress( "Dumping for 'unmapped_reason' to '%s'\n", $filename );
 
+  my $sth =
+    $core_dbh->prepare(   'SELECT unmapped_reason_id '
+                        . 'FROM unmapped_reason '
+                        . 'WHERE full_description = ?' );
+
   foreach my $reason (
             sort( { $a->{'full'} cmp $b->{'full'} } values(%reasons) ) )
   {
-    # Assign 'unmapped_reason_id' to this reason.
-    $reason->{'unmapped_reason_id'} = ++$unmapped_reason_id;
+    # Figure out 'unmapped_reason_id' from the core database.
+    $sth->bind_param( 1, $reason->{'full'}, SQL_VARCHAR );
+
+    $sth->execute();
+
+    my $id;
+    $sth->bind_col( 1, \$id );
+    $sth->fetch();
+
+    if ( defined($id) ) {
+      $reason->{'unmapped_reason_id'} = $id;
+    } else {
+      $reason->{'unmapped_reason_id'} = ++$unmapped_reason_id;
+    }
+
+    $sth->finish();
 
     $fh->printf( "%d\t%s\t%s\n", $reason->{'unmapped_reason_id'},
                  $reason->{'summary'}, $reason->{'full'} );

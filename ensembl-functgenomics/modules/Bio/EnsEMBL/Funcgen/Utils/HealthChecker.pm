@@ -1,26 +1,30 @@
+=head1 LICENSE
+
+  Copyright (c) 1999-2011 The European Bioinformatics Institute and
+  Genome Research Limited.  All rights reserved.
+
+  This software is distributed under a modified Apache license.
+  For license details, please see
+
+    http://www.ensembl.org/info/about/code_licence.html
+
+=head1 CONTACT
+
+  Please email comments or questions to the public Ensembl
+  developers list at <ensembl-dev@ebi.ac.uk>.
+
+  Questions may also be sent to the Ensembl help desk at
+  <helpdesk@ensembl.org>.
+
 =head1 NAME
 
-Bio::EnsEMBL::Funcgen::Utils::Helper
+Bio::EnsEMBL::Funcgen::Utils::HealthChecker
   
 =head1 SYNOPSIS
-
-
-
-
 
 =head1 DESCRIPTION
 
 B<This program> performs several health check and update methods prior to release.
-
-=cut
-
-=head1 NOTES
-
-
-=head1 AUTHOR(S)
-
-Nathan Johnson, njohnson@ebi.ac.uk
-
 
 =cut
 
@@ -124,6 +128,9 @@ sub update_db_for_release{
   $self->set_current_coord_system;
   $self->update_meta_coord;
   $self->clean_xrefs;
+  $self->validate_DataSets;
+  $self->check_stable_ids;
+    $self->log_data_sets();
   $self->analyse_and_optimise_tables;#ALWAYS LAST!!
 
   $self->log_header('??? Have you dumped/copied GFF dumps ???');
@@ -375,8 +382,6 @@ sub update_meta_coord{
 
 	$self->log("New max_lengths for $table_name are:");
 	
-	#wtf?
-	#map {$self->log(join("\t", @{$_}))} ['coord_system_id', 'max_length', 'longest record dbID'];
 	$self->log(join("\t", ('coord_system_id', 'max_length', 'longest record dbID')));
 
 	foreach my $cs_id(@cs_ids){
@@ -400,6 +405,11 @@ sub update_meta_coord{
 		$sql .= ' and t.window_size=0' if $table_name eq 'result_feature';
 		$sql .= " order by max desc limit 1";
 		
+
+		#Problem here is that DBs without 0 wsize result_feture entries will not get a meta_coord entry
+		#We need to implement this in the _pre_store method too?
+
+
 		my ($cs_length, $table_id);
 		($cs_length, $table_id) = $self->db->dbc->db_handle->selectrow_array($sql);
 		push @cs_lengths, [$cs_length, $table_id] if $cs_length;
@@ -459,13 +469,14 @@ sub check_meta_species{
 
 #Move to Java HC? Or update if update flag specified
 #Using same code used by build_reg_feats!
+
 sub check_meta_strings{
   my ($self, $update) = @_;
   
 
   $self->log_header('Checking meta strings');
 
-  warn "Need to check/update rebuild.version and regbuild.initial_release_date regbuild.last_annotation_update";
+  warn "Need to check/update regbuild.version and regbuild.initial_release_date regbuild.last_annotation_update";
 
   #update flag?
 
@@ -482,6 +493,9 @@ sub check_meta_strings{
 	$self->report("WARNING: Found no regulatory FeatureSets for check_meta_strings");
   }
   else{
+	
+	warn "Need to check/update regbuild.version and regbuild.initial_release_date regbuild.last_annotation_update";
+  
 
 	#How do we validate this?
 	#Check all feature_sets exist
@@ -576,13 +590,13 @@ sub check_meta_strings{
 
 		#Finally validate versus a reg feat
 		#Need to change this to ftype string rather than fset string?
+		my $id_row_ref = $self->db->dbc->db_handle->selectrow_arrayref('select regulatory_feature_id from regulatory_feature where feature_set_id='.$fset->dbID.' limit 1');
 
-		my ($regf_dbID) = @{$self->db->dbc->db_handle->selectrow_arrayref('select regulatory_feature_id from regulatory_feature where feature_set_id='.$fset->dbID.' limit 1')};
-	  
-		if(! defined $regf_dbID){
+		if(! defined $id_row_ref){
 		  $self->report("FAIL:\tNo RegulatoryFeatures found for FeatureSet ".$fset->name);
 		}
 		else{
+		  my ($regf_dbID) = @$id_row_ref;
 		  my $rf_string = $regf_a->fetch_by_dbID($regf_dbID)->binary_string;
 		  
 		  if(length($rf_string) != scalar(@fset_ids)){
@@ -677,8 +691,15 @@ sub check_stable_ids{
   else{
 
 	foreach my $fset(@regf_fsets){
+
+	  if($fset->name =~ /_v[0-9]$/){
+		$self->log("Skipping stable_id test on archived set:\t".$fset->name);
+		next;
+	  }
 	  
 	  #Can't count NULL field, so have to count regulatory_feature_id!!!
+
+	  #getting SR product here!!
 	  my $sql = "select count(rf.regulatory_feature_id) from regulatory_feature rf, seq_region sr, coord_system cs where rf.stable_id is NULL and rf.seq_region_id = sr.seq_region_id and sr.coord_system_id = cs.coord_system_id and cs.species_id = $species_id and rf.feature_set_id=".$fset->dbID;
 	  
 	  
@@ -699,7 +720,9 @@ sub check_stable_ids{
 		  $sql = 'select count(rf.stable_id) from regulatory_feature rf, seq_region sr, coord_system cs where rf.seq_region_id=sr.seq_region_id and sr.name="'.$sr_name.'" and sr.coord_system_id = cs.coord_system_id and cs.species_id = '.$species_id.' and rf.stable_id is NULL and rf.feature_set_id='.$fset->dbID;
 		  ($null_sids) = @{$self->db->dbc->db_handle->selectrow_arrayref($sql)};
 		  
-		  $self->log($fset->name.":\t$null_sids NULL stable IDs on ".$slice->name);
+		  #This is not reporting properly.
+
+		  $self->log($fset->name.":\t$null_sids NULL stable IDs on ".$slice->name) if $null_sids;
 		}
 	  }
 	  else{
@@ -749,18 +772,8 @@ sub validate_DataSets{
 
   my $fset_a = $self->db->get_FeatureSetAdaptor;
   my $dset_a = $self->db->get_DataSetAdaptor;
-  my $cs_a   = $self->db->dnadb->get_CoordSystemAdaptor;
-
-  my $imp_cs_status = 'IMPORTED_'.$cs_a->fetch_by_name('chromosome')->version;
-  #What about non-chromosome assemblies?
-  #top level will not return version...why not?
-
-
-
-  my @dset_states = ('DISPLAYABLE');
-  my @rset_states = (@dset_states, 'DAS_DISPLAYABLE', $imp_cs_status);
-  my @fset_states = (@rset_states, 'MART_DISPLAYABLE');
-
+  my (@dset_states, @rset_states, @fset_states);
+  (\@dset_states, \@rset_states, \@fset_states) = $self->get_regbuild_set_states($self->db);
 
   my %rf_fsets;
   my %set_states;
@@ -785,8 +798,9 @@ sub validate_DataSets{
 	  if(! $rf_fset->has_status($state)){
 		$self->report("WARNING:\tUpdating FeatureSet $rf_fset_name with status $state");
 		
-		$sql = 'INSERT into status(table_name, table_id, status_name_id) values select "feature_set", '.
-		  $rf_fset->dbID.", status_name_id from status_name where name='$state'";
+		$sql = 'INSERT into status select '. $rf_fset->dbID.
+		  ", 'feature_set', status_name_id from status_name where name='$state'";
+
 		$self->db->dbc->db_handle->do($sql);
 	  }
 	}
@@ -796,6 +810,13 @@ sub validate_DataSets{
 
 
 	my $rf_dset = $dset_a->fetch_by_product_FeatureSet($rf_fset);
+
+	if(! $rf_dset){
+	    $self->report("FAIL:\tNo DataSet for FeatureSet:\t$rf_fset_name");
+	  next RF_FSET;
+	}
+
+	
 
 	if($rf_fset_name ne $rf_dset->name){
 	  $self->report("FAIL:\tFound Feature/DataSet name mismatch:\t$rf_fset_name vs ".$rf_dset->name);
@@ -810,8 +831,8 @@ sub validate_DataSets{
 		#Or do this separately in case we want some control over this?
 		$self->report("WARNING:\tUpdating DataSet $rf_fset_name with status $state");
 
-		$sql = 'INSERT into status(table_name, table_id, status_name_id) values select "data_set", '.
-		  $rf_dset->dbID.", status_name_id from status_name where name='$state'";
+		$sql = 'INSERT into status select '.$rf_dset->dbID.
+		  ", 'data_set', status_name_id from status_name where name='$state'";
 		$self->db->dbc->db_handle->do($sql);
 	  }
 	}
@@ -832,8 +853,8 @@ sub validate_DataSets{
 		  #Or do this separately in case we want some control over this?
 		  $self->report("WARNING:\tUpdating FeatureSet ".$ra_fset->name." with status $state");
 
-		  $sql = 'INSERT into status(table_name, table_id, status_name_id) values select "feature_set", '.
-			$ra_fset->dbID.", status_name_id from status_name where name='$state'";
+		  $sql = 'INSERT into status select '.$ra_fset->dbID.
+			", 'feature_set', status_name_id from status_name where name='$state'";
 		  $self->db->dbc->db_handle->do($sql);
 
 		}
@@ -851,6 +872,7 @@ sub validate_DataSets{
 	  }
 	  elsif(scalar(@sset) == 0){
 		$self->report("FAIL:\tThere are no DISPLAYABLE supporting ResultSet for DataSet:\t".$ra_dset->name);
+		next; #$ra_fset
 	  }
 
 	  my $ra_rset = $sset[0];
@@ -862,8 +884,8 @@ sub validate_DataSets{
 		  #Or do this separately in case we want some control over this?
 		  $self->report("WARNING:\tUpdating ResultSet ".$ra_rset->name." with status $state");
 
-		  $sql = 'INSERT into status(table_name, table_id, status_name_id) values select "result_set", '.
-			$ra_rset->dbID.", status_name_id from status_name where name='$state'";
+		  $sql = 'INSERT into status select '.$ra_rset->dbID.
+			", 'result_set', status_name_id from status_name where name='$state'";
 		  $self->db->dbc->db_handle->do($sql);
 		}
 	  }
@@ -936,13 +958,36 @@ sub clean_xrefs{
 
   $self->log_header("Cleaning unlinked xref records");
  
-  my $sql = 'DELETE x from xref x where x.xref_id not in (select xref_id from object_xref)';
+  my $sql = 'DELETE x FROM xref x LEFT JOIN object_xref ox ON ox.xref_id = x.xref_id WHERE ox.xref_id IS NULL';
+  #Should this also take accoumt of unmapped_objects?
+  #No, as unmapped_object doesn't use xref, but probably should
 
-  my $row_cnt = $self->db->dbc->do($sql);
+   my $row_cnt = $self->db->dbc->do($sql);
 
   $self->reset_table_autoinc('xref', 'xref_id', $self->db);
   $row_cnt = 0 if $row_cnt eq '0E0';
   $self->log("Deleted $row_cnt unlinked xref records");
+
+
+  #Now remove old edbs
+  $self->log_header("Cleaning unlinked external_db records");
+
+  #Need to account for xref and unmapped_object here
+  $sql = 'DELETE edb FROM external_db edb '.
+	'LEFT JOIN xref x ON x.external_db_id = edb.external_db_id '.
+	  'LEFT JOIN  unmapped_object uo ON uo.external_db_id=edb.external_db_id '.
+		'WHERE x.external_db_id IS NULL and uo.external_db_id is NULL';
+  $row_cnt = $self->db->dbc->do($sql);
+
+  $self->reset_table_autoinc('external_db', 'external_db_id', $self->db);
+  $row_cnt = 0 if $row_cnt eq '0E0';
+  $self->log("Deleted $row_cnt unlinked external_db records");
+
+
+  #Shouldn't clean orphaned oxs here as this means a rollback been done underneath the ox data
+  #or we have xref_id=0!
+  #Leave this to HC?
+
 
   return;
 }

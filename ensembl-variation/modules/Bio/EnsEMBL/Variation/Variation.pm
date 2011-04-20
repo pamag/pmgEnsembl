@@ -1,3 +1,23 @@
+=head1 LICENSE
+
+ Copyright (c) 1999-2011 The European Bioinformatics Institute and
+ Genome Research Limited.  All rights reserved.
+
+ This software is distributed under a modified Apache license.
+ For license details, please see
+
+   http://www.ensembl.org/info/about/code_licence.html
+
+=head1 CONTACT
+
+ Please email comments or questions to the public Ensembl
+ developers list at <dev@ensembl.org>.
+
+ Questions may also be sent to the Ensembl help desk at
+ <helpdesk@ensembl.org>.
+
+=cut
+
 # Ensembl module for Bio::EnsEMBL::Variation::Variation
 #
 # Copyright (c) 2004 Ensembl
@@ -69,10 +89,6 @@ A Variation object has an associated identifier and 0 or more additional
 synonyms.  The position of a Variation object on the Genome is represented
 by the B<Bio::EnsEMBL::Variation::VariationFeature> class.
 
-=head1 CONTACT
-
-Post questions to the Ensembl development list: ensembl-dev@ebi.ac.uk
-
 =head1 METHODS
 
 =cut
@@ -85,9 +101,11 @@ package Bio::EnsEMBL::Variation::Variation;
 
 use Bio::EnsEMBL::Storable;
 use Bio::EnsEMBL::Utils::Argument qw(rearrange);
-use Bio::EnsEMBL::Variation::Utils::Sequence qw(ambiguity_code variation_class);
+use Bio::EnsEMBL::Utils::Scalar qw(assert_ref);
+use Bio::EnsEMBL::Variation::Utils::Sequence qw(ambiguity_code SO_variation_class);
 use Bio::EnsEMBL::Utils::Exception qw(throw deprecate warning);
 use vars qw(@ISA);
+use Scalar::Util qw(weaken);
 
 @ISA = qw(Bio::EnsEMBL::Storable);
 
@@ -95,14 +113,14 @@ use vars qw(@ISA);
 # List of validation states. Order must match that of set in database
 our @VSTATES = ('cluster','freq','submitter','doublehit','hapmap','1000Genome','failed','precious');
 
-# Conversion of validation state to bit value
+# Conversion of validation state to bit value. The states must be in lower-case here, regardless of what they are in the database!
 our %VSTATE2BIT = (
   'cluster'    => 1,   # 00000001
   'freq'       => 2,   # 00000010
   'submitter'  => 4,   # 00000100
   'doublehit'  => 8,   # 00001000
   'hapmap'     => 16,  # 00010000
-  '1000Genome' => 32,
+  '1000genome' => 32,
   'failed'     => 64,
   'precious'   => 128,
 ); 
@@ -121,10 +139,13 @@ our %VSTATE2BIT = (
     string - the name of this SNP
 
   Arg [-SOURCE] :
-    string - the source of this SNP
+    string - the source of this SNP	
 
   Arg [-SOURCE_DESCRIPTION] :
     string - description of the SNP source
+		
+	Arg [-SOURCE_TYPE] :
+		string - the source type of this variant
 
   Arg [-SYNONYMS] :
     reference to hash with list reference values -  keys are source
@@ -149,9 +170,6 @@ our %VSTATE2BIT = (
   Arg [-THREE_PRIME_FLANKING_SEQ] :
     string - the three prime flanking nucleotide sequence
 
-  Arg [-FAILED_DESCRIPTION] :
-    string - description why the variation failed Ensembl pipeline
-
   Example    : $v = Bio::EnsEMBL::Variation::Variation->new
                     (-name   => 'rs123',
                      -source => 'dbSNP');
@@ -169,12 +187,11 @@ sub new {
   my $caller = shift;
   my $class = ref($caller) || $caller;
 
-  my ($dbID, $adaptor, $name, $src, $src_desc, $src_url, $is_somatic, $syns, $ancestral_allele,
-      $alleles, $valid_states, $moltype, $five_seq, $three_seq, $failed_description, $flank_flag) =
-        rearrange([qw(dbID ADAPTOR NAME SOURCE SOURCE_DESCRIPTION SOURCE_URL IS_SOMATIC SYNONYMS ANCESTRAL_ALLELE ALLELES
-                      VALIDATION_STATES MOLTYPE FIVE_PRIME_FLANKING_SEQ
-                      THREE_PRIME_FLANKING_SEQ FAILED_DESCRIPTION FLANK_FLAG)],@_);
-
+  my ($dbID, $adaptor, $name, $class_so_term, $src, $src_desc, $src_url, $src_type, $is_somatic, $syns, $ancestral_allele,
+      $alleles, $valid_states, $moltype, $five_seq, $three_seq, $flank_flag) =
+        rearrange([qw(dbID ADAPTOR NAME CLASS_SO_TERM SOURCE SOURCE_DESCRIPTION SOURCE_URL SOURCE_TYPE IS_SOMATIC 
+                      SYNONYMS ANCESTRAL_ALLELE ALLELES VALIDATION_STATES MOLTYPE FIVE_PRIME_FLANKING_SEQ
+                      THREE_PRIME_FLANKING_SEQ FLANK_FLAG)],@_);
 
   # convert the validation state strings into a bit field
   # this preserves the same order and representation as in the database
@@ -184,26 +201,209 @@ sub new {
   foreach my $vstate (@$valid_states) {
     $vcode |= $VSTATE2BIT{lc($vstate)} || 0;
   }
-
-  return bless {'dbID' => $dbID,
-                'adaptor' => $adaptor,
-                'name'   => $name,
-                'source' => $src,
-				'source_description' => $src_desc,
-				'source_url' => $src_url,
-				'is_somatic' => $is_somatic,
-                'synonyms' => $syns || {},
-		        'ancestral_allele' => $ancestral_allele,
-                'alleles' => $alleles || [],
-                'validation_code' => $vcode,
-		        'moltype' => $moltype,
-                'five_prime_flanking_seq' => $five_seq,
-                'three_prime_flanking_seq' => $three_seq,
-	            'failed_description' => $failed_description,
-			    'flank_flag' => $flank_flag}, $class;
+  
+  my $self = bless {
+    'dbID' => $dbID,
+    'adaptor' => $adaptor,
+    'name'   => $name,
+    'class_SO_term' => $class_so_term,
+    'source' => $src,
+    'source_description' => $src_desc,
+    'source_url' => $src_url,
+	'source_type'=> $src_type,
+    'is_somatic' => $is_somatic,
+    'synonyms' => $syns || {},
+    'ancestral_allele' => $ancestral_allele,
+    'validation_code' => $vcode,
+    'moltype' => $moltype,
+    'five_prime_flanking_seq' => $five_seq,
+    'three_prime_flanking_seq' => $three_seq,
+    'flank_flag' => $flank_flag
+  }, $class;
+  
+    # Add the alleles to this Variation object
+    map {$self->_add_Allele($_)} @{$alleles} if (defined($alleles));
+  
+  return $self;
 }
 
 
+=head2 is_failed
+
+  Example    : print "Variation '" . $var->name() . "' has " . ($var->is_failed() ? "" : "not ") . "been flagged as failed\n";
+  Description: Gets the failed attribute for this variation. The failed attribute
+	           is lazy-loaded from the database.
+  Returntype : int
+  Exceptions : none
+  Caller     : general
+  Status     : At risk
+
+=cut
+
+sub is_failed {
+  my $self = shift;
+  
+  return (length($self->failed_description()) > 0);
+}
+
+=head2 has_failed_subsnps
+
+  Description: DEPRECATED: Use has_failed_alleles instead.
+  Status     : DEPRECATED
+
+=cut
+
+sub has_failed_subsnps {
+    my $self = shift;
+  
+    deprecate("has_failed_subsnps should no longer be used, use has_failed_alleles instead\n");
+    return $self->has_failed_alleles();
+}
+
+=head2 has_failed_alleles
+
+  Example    : print "Variation '" . $var->name() . "' has " . ($var->has_failed_alleles() ? "" : "no ") . " failed alleles\n";
+  Description: Returns true if this variation has alleles that are flagged as failed
+  Returntype : int
+  Exceptions : none
+  Caller     : general
+  Status     : At risk
+
+=cut
+
+sub has_failed_alleles {
+    my $self = shift;
+  
+    map {return 1 if ($_->is_failed())} @{$self->get_all_Alleles()};
+    return 0;
+}
+
+=head2 failed_description
+
+  Arg [1]    : $failed_description (optional)
+	           The new value to set the failed_description attribute to. Should 
+	           be a reference to a list of strings, alternatively a string can
+	           be passed. If multiple failed descriptions are specified, they should
+	           be separated with semi-colons.  
+  Example    : $failed_str = $var->failed_description();
+  Description: Get/Sets the failed description for this variation. The failed
+	           descriptions are lazy-loaded from the database.
+  Returntype : Semi-colon separated string 
+  Exceptions : Thrown on illegal argument.
+  Caller     : general
+  Status     : At risk
+
+=cut
+
+sub failed_description {
+    my $self = shift;
+    my $description = shift;
+  
+    # Update the description if necessary
+    if (defined($description)) {
+        
+        # If the description is a string, split it by semi-colon and take the reference
+        if (check_ref($description,'STRING')) {
+            my @pcs = split(/;/,$description);
+            $description = \@pcs;
+        }
+        # Throw an error if the description is not an arrayref
+        assert_ref($description.'ARRAY');
+        
+        # Update the cached failed_description
+        $self->{'failed_description'} = $description;
+    }
+    #ÊElse, fetch it from the db if it's not cached
+    elsif (!defined($self->{'failed_description'})) {
+        $self->{'failed_description'} = $self->get_all_failed_descriptions();
+    }
+    
+    # Return a semi-colon separated string of descriptions
+    return join(";",@{$self->{'failed_description'}});
+}
+
+=head2 get_all_failed_descriptions
+
+  Example    :  
+                if ($var->is_failed()) {
+                    my $descriptions = $var->get_all_failed_descriptions();
+                    print "Variation " . $var->name() . " has been flagged as failed because '";
+                    print join("' and '",@{$descriptions}) . "'\n";
+                }
+                
+  Description: Gets all failed descriptions associated with this Variation.
+  Returntype : Reference to a list of strings 
+  Exceptions : Thrown if an adaptor is not attached to this object.
+  Caller     : general
+  Status     : At risk
+
+=cut
+
+sub get_all_failed_descriptions {
+  my $self = shift;
+  
+    #ÊIf the failed descriptions haven't been cached yet, load them from db
+    unless (defined($self->{'failed_description'})) {
+        
+        #ÊCheck that this allele has an adaptor attached
+        unless (defined($self->adaptor())) {
+            throw('An adaptor must be attached to the ' . ref($self)  . ' object');
+        }
+    
+        $self->{'failed_description'} = $self->adaptor->get_all_failed_descriptions($self);
+    }
+    
+    return $self->{'failed_description'};
+}
+
+=head2 _add_Allele
+
+  Arg [1]    : Bio::EnsEMBL::Variation::Allele $allele
+  Example    : $v->add_Allele(Bio::EnsEMBL::Variation::Alelele->new(...));
+  Description: Associates an Allele with this variation. Should only be called from within the variation module
+  Returntype : none
+  Exceptions : throw on incorrect argument
+  Caller     : general
+  Status     : At Risk
+
+=cut
+
+sub _add_Allele {
+    my $self = shift;
+    my $allele = shift;
+
+    #ÊAdd (or replace) the allele to the hash
+    $self->add_Allele($allele);
+    
+    #ÊAdd a reference to ourself to the allele object
+    $allele->variation($self);
+  
+    #ÊWeaken the allele's reference back to this variation object
+    $allele->_weaken();
+}
+
+=head2 allele
+
+  Arg [1]    : Bio::EnsEMBL::Variation::Allele $allele (Optional)
+  Example    : $v->allele(Bio::EnsEMBL::Variation::Alelele->new(...));
+  Description: Add an Allele to this variation.
+  Returntype : none
+  Exceptions : throw on incorrect argument
+  Caller     : general
+  Status     : At Risk
+
+=cut
+
+sub add_Allele {
+    my $self = shift;
+    my $allele = shift;
+  
+    assert_ref($allele,'Bio::EnsEMBL::Variation::Allele');
+    
+    #ÊStore the allele in our private hash using the allele_id as key. This is primarily in order to quickly update allele objects that are created later and needs to be properly linked to the variation
+    $self->{'alleles'}{$allele->dbID()} = $allele;
+    
+}
 
 =head2 name
 
@@ -523,6 +723,25 @@ sub source{
 }
 
 
+=head2 source_type
+
+  Arg [1]    : string $source_type (optional)
+               The new value to set the source type attribute to
+  Example    : $source_type = $v->source_type()
+  Description: Getter/Setter for the source type attribute
+  Returntype : string
+  Exceptions : none
+  Caller     : general
+  Status     : At risk
+
+=cut
+
+sub source_type{
+  my $self = shift;
+  return $self->{'source_type'} = shift if(@_);
+  return $self->{'source_type'};
+}
+
 
 =head2 source_description
 
@@ -597,33 +816,12 @@ sub is_somatic {
 
 sub get_all_Alleles {
   my $self = shift;
-  return $self->{'alleles'};
+  
+  my @alleles = values(%{$self->{'alleles'}});
+  return \@alleles;
 }
 
 
-
-=head2 add_Allele
-
-  Arg [1]    : Bio::EnsEMBL::Variation::Allele $allele
-  Example    : $v->add_Allele(Bio::EnsEMBL::Variation::Alelele->new(...));
-  Description: Associates an Allele with this variation
-  Returntype : none
-  Exceptions : throw on incorrect argument
-  Caller     : general
-  Status     : At Risk
-
-=cut
-
-sub add_Allele {
-  my $self = shift;
-  my $allele = shift;
-
-  if(!ref($allele) || !$allele->isa('Bio::EnsEMBL::Variation::Allele')) {
-    throw("Bio::EnsEMBL::Variation::Allele argument expected");
-  }
-
-  push @{$self->{'alleles'}}, $allele;
-}
 
 =head2 ancestral_allele
 
@@ -734,10 +932,11 @@ sub three_prime_flanking_seq{
 
 sub get_all_IndividualGenotypes {
     my $self = shift;
+	my $individual = shift;
     if (defined ($self->{'adaptor'})){
 	my $igtya = $self->{'adaptor'}->db()->get_IndividualGenotypeAdaptor();
 	
-	return $igtya->fetch_all_by_Variation($self);
+	return $igtya->fetch_all_by_Variation($self, $individual);
     }
     return [];
 }
@@ -845,30 +1044,32 @@ sub ambig_code{
 sub var_class{
     my $self = shift;
     
-    my $alleles = $self->get_all_Alleles(); #get all Allele objects
-    my %alleles; #to get all the different alleles in the Variation
-    map {$alleles{$_->allele}++} @{$alleles};
-    my $allele_string = join "|",keys %alleles;
-    return &variation_class($allele_string, $self->is_somatic);
-}
+    unless ($self->{class_display_term}) {
+       
+        unless ($self->{class_SO_term}) {
+            # work out the term from the alleles
+            
+            my $alleles = $self->get_all_Alleles(); #get all Allele objects
+            my %alleles; #to get all the different alleles in the Variation
+            map {$alleles{$_->allele}++} @{$alleles};
+            my $allele_string = join '/',keys %alleles;
 
-=head2 failed_description
-
-  Arg [1]    : string $failed_description (optional)
-               The new value to set the failed_description attribute to
-  Example    : $failed_description = $v->failed_description()
-  Description: Getter/Setter for the failed_description attribute
-  Returntype : string
-  Exceptions : none
-  Caller     : general
-  Status     : Stable
-
-=cut
-
-sub failed_description{
-  my $self = shift;
-  return $self->{'failed_description'} = shift if(@_);
-  return $self->{'failed_description'};
+            $self->{class_SO_term} = SO_variation_class($allele_string);
+        }
+        
+        if (my $display_term = $self->{adaptor}->class_display_term_for_SO_term(
+                $self->{class_SO_term}, 
+                $self->is_somatic
+            ) ) {
+            
+            $self->{class_display_term} = $display_term;
+        }
+        else {
+            die "Unrecognised SO term: ".$self->{class_SO_term};
+        }
+    }
+    
+    return $self->{class_display_term};
 }
 
 =head2 derived_allele_frequency
@@ -970,6 +1171,20 @@ sub derived_allele {
          }
      }
      return $derived_allele_str;
+}
+
+sub _weaken {
+    my $self = shift;
+    my $allele = shift;
+    
+    #ÊAssert the allele reference
+    assert_ref($allele,'Bio::EnsEMBL::Variation::Allele');
+    
+    #ÊIf the allele does not exist in our allele hash, do nothing
+    return unless (defined($self->{'alleles'}) && exists($self->{'alleles'}{$allele->dbID()}));
+    
+    #ÊWeaken the link from this variation to the allele
+    weaken($self->{'alleles'}{$allele->dbID()});
 }
 
 1;

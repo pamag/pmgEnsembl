@@ -1,6 +1,6 @@
 =head1 LICENSE
 
-  Copyright (c) 1999-2010 The European Bioinformatics Institute and
+  Copyright (c) 1999-2011 The European Bioinformatics Institute and
   Genome Research Limited.  All rights reserved.
 
   This software is distributed under a modified Apache license.
@@ -136,7 +136,7 @@ sub new {
   $rank ||= 0;
 
   if ( $top_level == 1 ) {
-    if ( $rank == 1 ) {
+    if ( $rank != 0 ) {
       throw('RANK argument must be 0 if TOP_LEVEL is 1');
     }
 

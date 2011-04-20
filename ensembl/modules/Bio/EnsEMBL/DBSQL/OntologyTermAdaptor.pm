@@ -1,7 +1,6 @@
-
 =head1 LICENSE
 
-  Copyright (c) 1999-2010 The European Bioinformatics Institute and
+  Copyright (c) 1999-2011 The European Bioinformatics Institute and
   Genome Research Limited.  All rights reserved.
 
   This software is distributed under a modified Apache license.
@@ -25,7 +24,8 @@ Bio::EnsEMBL::DBSQL::OntologyTermAdaptor
 
 =head1 SYNOPSIS
 
-  my $goa = $registry->get_adaptor( 'Multi', 'Ontology', 'GOTerm' );
+  my $goa =
+    $registry->get_adaptor( 'Multi', 'Ontology', 'OntologyTerm' );
 
   my $term = $goa->fetch_by_accession('GO:0010885');
 
@@ -41,8 +41,6 @@ Bio::EnsEMBL::DBSQL::OntologyTermAdaptor
 
 An abstract adaptor class for fetching ontology
 terms, creates Bio::EnsEMBL::OntologyTerm objects.
-Specialized by Bio::EnsEMBL::DBSQL::GOTermAdaptor and
-Bio::EnsEMBL::DBSQL::SOTermAdaptor
 
 =head1 METHODS
 
@@ -56,69 +54,85 @@ use warnings;
 use DBI qw( :sql_types );
 
 use Bio::EnsEMBL::Utils::Exception qw( throw );
+use Bio::EnsEMBL::Utils::Scalar qw( assert_ref );
 
 use Bio::EnsEMBL::OntologyTerm;
 
 use base qw( Bio::EnsEMBL::DBSQL::BaseAdaptor );
 
-=head2 new
+=head2 fetch_all_by_name
 
-  Arg [1]       : Bio::EnsEMBL::DBSQL::DBAdaptor
-                  Argument required for parent class
-                  Bio::EnsEMBL::DBSQL::BaseAdaptor.
+  Arg [1]       : String, name of term, or SQL pattern
+  Arg [2]       : (optional) String, name of ontology
 
-  Arg [2]       : String
-                  The particular ontology that this ontology adaptor
-                  deals with.
-
-  Caller        : Bio::EnsEMBL::DBSQL::GOTermAdaptor
-                  Bio::EnsEMBL::DBSQL::SOTermAdaptor
-
-  Description   : Creates an ontology term adaptor.
+  Description   : Fetches ontology term(s) given a name, a synonym, or a
+                  SQL pattern like "%splice_site%"
 
   Example       :
 
-    my $ot_adaptor =
-      Bio::EnsEMBL::DBSQL::OntologyTermAdaptor->new( $dba, 'GO' );
+    my ($term) =
+      @{ $ot_adaptor->fetch_by_name( 'DNA_binding_site', 'SO' ) };
 
-  Return type   : Bio::EnsEMBL::DBSQL::OntologyTermAdaptor
+    # Will find terms in both SO and GO:
+    my @terms = @{ $ot_adaptor->fetch_by_name('%splice_site%') };
+
+  Return type   : listref of Bio::EnsEMBL::OntologyTerm
 
 =cut
 
-sub new {
-  my ( $proto, $dba, $ontology ) = @_;
+sub fetch_all_by_name {
+  my ( $this, $pattern, $ontology ) = @_;
 
-  if ( !ref($dba) || !$dba->isa('Bio::EnsEMBL::DBSQL::DBAdaptor') ) {
-    throw('First argument needs to be a '
-        . 'Bio::EnsEMBL::DBSQL::DBAdaptor object' );
+  my $statement = q(
+SELECT DISTINCT
+        term.term_id,
+        term.accession,
+        term.name,
+        term.definition,
+        term.subsets,
+        ontology.namespace
+FROM    ontology
+  JOIN  term USING (ontology_id)
+  JOIN  synonym USING (term_id)
+WHERE   ( term.name LIKE ? OR synonym.name LIKE ? ));
+
+  if ( defined($ontology) ) {
+    $statement .= " AND ontology.name = ?";
   }
 
-  my $this = $proto->SUPER::new($dba);
+  my $sth = $this->prepare($statement);
+  $sth->bind_param( 1, $pattern, SQL_VARCHAR );
+  $sth->bind_param( 2, $pattern, SQL_VARCHAR );
 
-  $this->{'ontology'} = $ontology;
+  if ( defined($ontology) ) {
+    $sth->bind_param( 3, $ontology, SQL_VARCHAR );
+  }
 
-  return $this;
-}
+  $sth->execute();
 
-=head2 ontology
+  my ( $dbid, $accession, $name, $definition, $subsets, $namespace );
+  $sth->bind_columns(
+     \( $dbid, $accession, $name, $definition, $subsets, $namespace ) );
 
-  Arg           : None
+  my @terms;
 
-  Description   : Returns the name of the ontology which this
-                  adaptor is used to retrieve terms for.
+  while ( $sth->fetch() ) {
+    $subsets ||= '';
 
-  Example       :
+    push @terms,
+      Bio::EnsEMBL::OntologyTerm->new(
+                               '-dbid'      => $dbid,
+                               '-adaptor'   => $this,
+                               '-accession' => $accession,
+                               '-namespace' => $namespace,
+                               '-subsets' => [ split( /,/, $subsets ) ],
+                               '-name'    => $name,
+                               '-definition' => $definition, );
+  }
 
-    my $ontology = $ot_adaptor->ontology();
+  return \@terms;
+} ## end sub fetch_all_by_name
 
-  Return type   : String
-
-=cut
-
-sub ontology {
-  my ($this) = @_;
-  return $this->{'ontology'};
-}
 
 =head2 fetch_by_accession
 
@@ -142,34 +156,36 @@ SELECT  term.term_id,
         term.name,
         term.definition,
         term.subsets,
+        ontology.name,
         ontology.namespace
-FROM    ontology,
-        term
-WHERE   ontology.name = ?
-  AND   ontology.ontology_id = term.ontology_id
-  AND   term.accession = ?);
+FROM    ontology
+  JOIN  term USING (ontology_id)
+WHERE   term.accession = ?);
 
   my $sth = $this->prepare($statement);
-  $sth->bind_param( 1, $this->{'ontology'}, SQL_VARCHAR );
-  $sth->bind_param( 2, $accession,          SQL_VARCHAR );
+  $sth->bind_param( 1, $accession, SQL_VARCHAR );
 
   $sth->execute();
 
-  my ( $dbid, $name, $definition, $subsets, $namespace );
+  my ( $dbid, $name, $definition, $subsets, $ontology, $namespace );
   $sth->bind_columns(
-    \( $dbid, $name, $definition, $subsets, $namespace ) );
+      \( $dbid, $name, $definition, $subsets, $ontology, $namespace ) );
 
   $sth->fetch();
   $subsets ||= '';
-  my $term = Bio::EnsEMBL::OntologyTerm->new(
-    '-dbid'       => $dbid,
-    '-adaptor'    => $this,
-    '-accession'  => $accession,
-    '-namespace'  => $namespace,
-    '-subsets'    => [ split( /,/, $subsets ) ],
-    '-name'       => $name,
-    '-definition' => $definition
-  );
+
+  my $term =
+    Bio::EnsEMBL::OntologyTerm->new(
+                    '-dbid'       => $dbid,
+                    '-adaptor'    => $this,
+                    '-accession'  => $accession,
+                    '-ontology'   => $ontology,
+                    '-namespace'  => $namespace,
+                    '-subsets'    => [ split( /,/, $subsets ) ],
+                    '-name'       => $name,
+                    '-definition' => $definition,
+                    '-synonyms' => $this->_fetch_synonyms_by_dbID($dbid)
+    );
   $sth->finish();
 
   return $term;
@@ -195,9 +211,7 @@ WHERE   ontology.name = ?
 sub fetch_all_by_parent_term {
   my ( $this, $term ) = @_;
 
-  if ( !ref($term) || !$term->isa('Bio::EnsEMBL::OntologyTerm') ) {
-    throw('Argument needs to be a Bio::EnsEMBL::OntologyTerm object');
-  }
+  assert_ref( $term, 'Bio::EnsEMBL::OntologyTerm' );
 
   my @terms;
 
@@ -209,12 +223,10 @@ SELECT  child_term.term_id,
         child_term.definition,
         child_term.subsets,
         rt.name
-FROM    term child_term,
-        relation,
-        relation_type rt
-WHERE   relation.child_term_id = child_term.term_id
-  AND   relation.parent_term_id = ?
-  AND   relation.relation_type_id = rt.relation_type_id);
+FROM    term child_term
+  JOIN  relation ON (relation.child_term_id = child_term.term_id)
+  JOIN  relation_type rt USING (relation_type_id)
+WHERE   relation.parent_term_id = ?);
 
     my $sth = $this->prepare($statement);
     $sth->bind_param( 1, $term->dbID(), SQL_INTEGER );
@@ -228,21 +240,20 @@ WHERE   relation.child_term_id = child_term.term_id
     while ( $sth->fetch() ) {
       $subsets ||= '';
 
-      my $child_term = Bio::EnsEMBL::OntologyTerm->new(
-        '-dbid'       => $dbid,
-        '-adaptor'    => $this,
-        '-accession'  => $accession,
-        '-namespace'  => $term->{'namespace'},
-        '-subsets'    => [ split( /,/, $subsets ) ],
-        '-name'       => $name,
-        '-definition' => $definition,
-      );
+      my $child_term =
+        Bio::EnsEMBL::OntologyTerm->new(
+                               '-dbid'      => $dbid,
+                               '-adaptor'   => $this,
+                               '-accession' => $accession,
+                               '-ontology'  => $term->{'ontology'},
+                               '-namespace' => $term->{'namespace'},
+                               '-subsets' => [ split( /,/, $subsets ) ],
+                               '-name'    => $name,
+                               '-definition' => $definition, );
 
       push( @terms,                              $child_term );
       push( @{ $term->{'children'}{$relation} }, $child_term );
     }
-
-    $sth->finish();
 
     $term->{'child_terms_fetched'} = 1;
   } else {
@@ -276,9 +287,7 @@ WHERE   relation.child_term_id = child_term.term_id
 sub fetch_all_by_ancestor_term {
   my ( $this, $term ) = @_;
 
-  if ( !ref($term) || !$term->isa('Bio::EnsEMBL::OntologyTerm') ) {
-    throw('Argument needs to be a Bio::EnsEMBL::OntologyTerm object');
-  }
+  assert_ref( $term, 'Bio::EnsEMBL::OntologyTerm' );
 
   my $statement = q(
 SELECT DISTINCT
@@ -287,10 +296,9 @@ SELECT DISTINCT
         child_term.name,
         child_term.definition,
         child_term.subsets
-FROM    term child_term,
-        closure
-WHERE   closure.child_term_id = child_term.term_id
-  AND   closure.parent_term_id = ?
+FROM    term child_term
+  JOIN  closure ON (closure.child_term_id = child_term.term_id)
+WHERE   closure.parent_term_id = ?
   AND   closure.distance > 0
 ORDER BY closure.distance, child_term.accession);
 
@@ -301,27 +309,24 @@ ORDER BY closure.distance, child_term.accession);
 
   my ( $dbid, $accession, $name, $definition, $subsets );
   $sth->bind_columns(
-    \( $dbid, $accession, $name, $definition, $subsets ) );
+                 \( $dbid, $accession, $name, $definition, $subsets ) );
 
   my @terms;
 
   while ( $sth->fetch() ) {
     $subsets ||= '';
 
-    push(
-      @terms,
-      Bio::EnsEMBL::OntologyTerm->new(
-        '-dbid'       => $dbid,
-        '-adaptor'    => $this,
-        '-accession'  => $accession,
-        '-namespace'  => $term->{'namespace'},
-        '-subsets'    => [ split( /,/, $subsets ) ],
-        '-name'       => $name,
-        '-definition' => $definition,
-      ) );
+    push( @terms,
+          Bio::EnsEMBL::OntologyTerm->new(
+                               '-dbid'      => $dbid,
+                               '-adaptor'   => $this,
+                               '-accession' => $accession,
+                               '-ontology'  => $term->{'ontology'},
+                               '-namespace' => $term->{'namespace'},
+                               '-subsets' => [ split( /,/, $subsets ) ],
+                               '-name'    => $name,
+                               '-definition' => $definition, ) );
   }
-
-  $sth->finish();
 
   return \@terms;
 } ## end sub fetch_all_by_ancestor_term
@@ -345,9 +350,7 @@ ORDER BY closure.distance, child_term.accession);
 sub fetch_all_by_child_term {
   my ( $this, $term ) = @_;
 
-  if ( !ref($term) || !$term->isa('Bio::EnsEMBL::OntologyTerm') ) {
-    throw('Argument needs to be a Bio::EnsEMBL::OntologyTerm object');
-  }
+  assert_ref( $term, 'Bio::EnsEMBL::OntologyTerm' );
 
   my @terms;
 
@@ -359,12 +362,10 @@ SELECT  parent_term.term_id,
         parent_term.definition,
         parent_term.subsets,
         rt.name
-FROM    term parent_term,
-        relation,
-        relation_type rt
-WHERE   relation.child_term_id = ?
-  AND   relation.parent_term_id = parent_term.term_id
-  AND   relation.relation_type_id = rt.relation_type_id);
+FROM    term parent_term
+  JOIN  relation ON (relation.parent_term_id = parent_term.term_id)
+  JOIN  relation_type rt USING (relation_type_id)
+WHERE   relation.child_term_id = ?);
 
     my $sth = $this->prepare($statement);
     $sth->bind_param( 1, $term->dbID(), SQL_INTEGER );
@@ -378,21 +379,20 @@ WHERE   relation.child_term_id = ?
     while ( $sth->fetch() ) {
       $subsets ||= '';
 
-      my $parent_term = Bio::EnsEMBL::OntologyTerm->new(
-        '-dbid'       => $dbid,
-        '-adaptor'    => $this,
-        '-accession'  => $accession,
-        '-namespace'  => $term->{'namespace'},
-        '-subsets'    => [ split( /,/, $subsets ) ],
-        '-name'       => $name,
-        '-definition' => $definition,
-      );
+      my $parent_term =
+        Bio::EnsEMBL::OntologyTerm->new(
+                               '-dbid'      => $dbid,
+                               '-adaptor'   => $this,
+                               '-accession' => $accession,
+                               '-ontology'  => $term->{'ontology'},
+                               '-namespace' => $term->{'namespace'},
+                               '-subsets' => [ split( /,/, $subsets ) ],
+                               '-name'    => $name,
+                               '-definition' => $definition, );
 
       push( @terms,                             $parent_term );
       push( @{ $term->{'parents'}{$relation} }, $parent_term );
     }
-
-    $sth->finish();
 
     $term->{'parent_terms_fetched'} = 1;
   } else {
@@ -414,7 +414,7 @@ WHERE   relation.child_term_id = ?
                   should be restricted.  The subset may be specified as
                   a SQL pattern, e.g., "%goslim%" (but "goslim%" might
                   not do what you expect), or as a specific subset name,
-                  e.g., "goslim_goa".
+                  e.g., "goslim_generic".
 
   Arg [3]       : (optional) Boolean
                   If true (non-zero), only return the closest
@@ -442,9 +442,7 @@ WHERE   relation.child_term_id = ?
 sub fetch_all_by_descendant_term {
   my ( $this, $term, $subset, $closest_only ) = @_;
 
-  if ( !ref($term) || !$term->isa('Bio::EnsEMBL::OntologyTerm') ) {
-    throw('Argument needs to be a Bio::EnsEMBL::OntologyTerm object');
-  }
+  assert_ref( $term, 'Bio::EnsEMBL::OntologyTerm' );
 
   $closest_only ||= 0;
 
@@ -456,10 +454,9 @@ SELECT DISTINCT
         parent_term.definition,
         parent_term.subsets,
         closure.distance
-FROM    term parent_term,
-        closure
+FROM    term parent_term
+  JOIN  closure ON (closure.parent_term_id = parent_term.term_id)
 WHERE   closure.child_term_id = ?
-  AND   closure.parent_term_id = parent_term.term_id
   AND   closure.distance > 0);
 
   if ( defined($subset) ) {
@@ -486,7 +483,7 @@ ORDER BY closure.distance, parent_term.accession);
 
   my ( $dbid, $accession, $name, $definition, $subsets, $distance );
   $sth->bind_columns(
-    \( $dbid, $accession, $name, $definition, $subsets, $distance ) );
+      \( $dbid, $accession, $name, $definition, $subsets, $distance ) );
 
   my @terms;
   my $min_distance;
@@ -496,26 +493,50 @@ ORDER BY closure.distance, parent_term.accession);
     $min_distance ||= $distance;
 
     if ( !$closest_only || $distance == $min_distance ) {
-      push(
-        @terms,
-        Bio::EnsEMBL::OntologyTerm->new(
-          '-dbid'       => $dbid,
-          '-adaptor'    => $this,
-          '-accession'  => $accession,
-          '-namespace'  => $term->{'namespace'},
-          '-subsets'    => [ split( /,/, $subsets ) ],
-          '-name'       => $name,
-          '-definition' => $definition,
-        ) );
+      push( @terms,
+            Bio::EnsEMBL::OntologyTerm->new(
+                               '-dbid'      => $dbid,
+                               '-adaptor'   => $this,
+                               '-accession' => $accession,
+                               '-ontology'  => $term->{'ontology'},
+                               '-namespace' => $term->{'namespace'},
+                               '-subsets' => [ split( /,/, $subsets ) ],
+                               '-name'    => $name,
+                               '-definition' => $definition, ) );
     } else {
+      $sth->finish();
       last;
     }
   }
 
-  $sth->finish();
-
   return \@terms;
 } ## end sub fetch_all_by_descendant_term
+
+sub _fetch_synonyms_by_dbID {
+  my ( $this, $dbID ) = @_;
+
+  my $statement = q(
+SELECT  synonym.name
+FROM    synonym
+WHERE   synonym.term_id = ?);
+
+  my $sth = $this->prepare($statement);
+  $sth->bind_param( 1, $dbID, SQL_INTEGER );
+
+  $sth->execute();
+
+  my $synonym;
+  $sth->bind_col( 1, \$synonym );
+
+  my @synonyms;
+  while ( $sth->fetch() ) {
+    push( @synonyms, $synonym );
+  }
+
+  return \@synonyms;
+}
+
+
 
 =head2 _fetch_ancestor_chart
 
@@ -550,25 +571,21 @@ ORDER BY closure.distance, parent_term.accession);
 sub _fetch_ancestor_chart {
   my ( $this, $term ) = @_;
 
-  if ( !ref($term) || !$term->isa('Bio::EnsEMBL::OntologyTerm') ) {
-    throw('Argument needs to be a Bio::EnsEMBL::OntologyTerm object');
-  }
+  assert_ref( $term, 'Bio::EnsEMBL::OntologyTerm' );
 
   my $statement = q(
 SELECT  subparent_term.term_id,
         parent_term.term_id,
         relation_type.name
-FROM    closure,
-        relation,
-        relation_type,
-        term subparent_term,
-        term parent_term
+FROM    closure
+  JOIN  relation
+    ON (relation.parent_term_id = closure.parent_term_id
+      AND relation.child_term_id = closure.subparent_term_id)
+  JOIN  relation_type USING (relation_type_id)
+  JOIN  term subparent_term
+    ON (subparent_term.term_id = closure.subparent_term_id)
+  JOIN  term parent_term ON (parent_term.term_id = closure.parent_term_id)
 WHERE   closure.child_term_id = ?
-  AND   relation.parent_term_id = closure.parent_term_id
-  AND   relation.child_term_id = closure.subparent_term_id
-  AND   relation.relation_type_id = relation_type.relation_type_id
-  AND   subparent_term.term_id = closure.subparent_term_id
-  AND   parent_term.term_id = closure.parent_term_id
 ORDER BY closure.distance);
 
   my $sth = $this->prepare($statement);
@@ -589,8 +606,6 @@ ORDER BY closure.distance);
     push( @{ $id_chart{$subparent_id}{$relation} }, $parent_id );
   }
 
-  $sth->finish();
-
   my @terms = @{ $this->fetch_all_by_dbID_list( [ keys(%id_chart) ] ) };
 
   foreach my $term (@terms) {
@@ -606,9 +621,8 @@ ORDER BY closure.distance);
       if ( $relation eq 'term' ) { next }
 
       foreach my $id ( @{ $id_chart{$dbID}{$relation} } ) {
-        push(
-          @{ $acc_chart{$accession}{$relation} },
-          $id_chart{$id}{'term'} );
+        push( @{ $acc_chart{$accession}{$relation} },
+              $id_chart{$id}{'term'} );
       }
     }
   }
@@ -628,32 +642,38 @@ SELECT  term.accession,
         term.name,
         term.definition,
         term.subsets,
+        ontology.name,
         ontology.namespace
-FROM    ontology,
-        term
-WHERE   ontology.ontology_id = term.ontology_id
-  AND   term.term_id = ?);
+FROM    ontology
+  JOIN  term USING (ontology_id)
+WHERE   term.term_id = ?);
 
   my $sth = $this->prepare($statement);
   $sth->bind_param( 1, $dbid, SQL_INTEGER );
 
   $sth->execute();
 
-  my ( $accession, $name, $definition, $subsets, $namespace );
+  my ( $accession, $name, $definition, $subsets, $ontology,
+       $namespace );
   $sth->bind_columns(
-    \( $accession, $name, $definition, $subsets, $namespace ) );
+      \( $accession, $name, $definition, $subsets, $ontology, $namespace
+      ) );
 
   $sth->fetch();
   $subsets ||= '';
-  my $term = Bio::EnsEMBL::OntologyTerm->new(
-    '-dbid'       => $dbid,
-    '-adaptor'    => $this,
-    '-accession'  => $accession,
-    '-namespace'  => $namespace,
-    '-subsets'    => [ split( /,/, $subsets ) ],
-    '-name'       => $name,
-    '-definition' => $definition
-  );
+
+  my $term =
+    Bio::EnsEMBL::OntologyTerm->new(
+                    '-dbid'       => $dbid,
+                    '-adaptor'    => $this,
+                    '-accession'  => $accession,
+                    '-ontology'   => $ontology,
+                    '-namespace'  => $namespace,
+                    '-subsets'    => [ split( /,/, $subsets ) ],
+                    '-name'       => $name,
+                    '-definition' => $definition,
+                    '-synonyms' => $this->_fetch_synonyms_by_dbID($dbid)
+    );
   $sth->finish();
 
   return $term;
@@ -670,45 +690,45 @@ SELECT  term.term_id,
         term.name,
         term.definition,
         term.subsets,
+        ontology.name,
         ontology.namespace
-FROM    ontology,
-        term
-WHERE   ontology.ontology_id = term.ontology_id
-  AND   term.term_id IN (%s));
+FROM    ontology
+  JOIN  term USING (ontology_id)
+WHERE   term.term_id IN (%s));
 
   my $statement = sprintf(
     $stmt,
-    join( ',',
-      map { $this->dbc()->db_handle()->quote( $_, SQL_INTEGER ) }
-        @{$dbids} ) );
+    join(
+      ',',
+      map {
+        $this->dbc()->db_handle()->quote( $_, SQL_INTEGER )
+        } @{$dbids} ) );
 
   my $sth = $this->prepare($statement);
 
   $sth->execute();
 
-  my ( $dbid, $accession, $name, $definition, $subsets, $namespace );
-  $sth->bind_columns(
-    \( $dbid, $accession, $name, $definition, $subsets, $namespace ) );
+  my ( $dbid, $accession, $name, $definition, $subsets, $ontology,
+       $namespace );
+  $sth->bind_columns( \( $dbid,    $accession, $name, $definition,
+                         $subsets, $ontology,  $namespace ) );
 
   my @terms;
 
   while ( $sth->fetch() ) {
     $subsets ||= '';
 
-    push(
-      @terms,
-      Bio::EnsEMBL::OntologyTerm->new(
-        '-dbid'       => $dbid,
-        '-adaptor'    => $this,
-        '-accession'  => $accession,
-        '-namespace'  => $namespace,
-        '-subsets'    => [ split( /,/, $subsets ) ],
-        '-name'       => $name,
-        '-definition' => $definition
-      ) );
+    push( @terms,
+          Bio::EnsEMBL::OntologyTerm->new(
+                               '-dbid'      => $dbid,
+                               '-adaptor'   => $this,
+                               '-accession' => $accession,
+                               '-ontology'  => $ontology,
+                               '-namespace' => $namespace,
+                               '-subsets' => [ split( /,/, $subsets ) ],
+                               '-name'    => $name,
+                               '-definition' => $definition, ) );
   }
-
-  $sth->finish();
 
   return \@terms;
 } ## end sub fetch_all_by_dbID_list
@@ -722,41 +742,35 @@ SELECT  term.term_id,
         term.name,
         term.definition,
         term.subsets,
+        ontology.name,
         ontology.namespace
-FROM    ontology,
-        term
-WHERE   ontology.ontology_id = term.ontology_id
-  AND   ontology.name = ?);
+FROM    ontology
+  JOIN  term USING (ontology_id));
 
   my $sth = $this->prepare($statement);
-
-  $sth->bind_param( 1, $this->{'ontology'}, SQL_VARCHAR );
-
   $sth->execute();
 
-  my ( $dbid, $accession, $name, $definition, $subsets, $namespace );
-  $sth->bind_columns(
-    \( $dbid, $accession, $name, $definition, $subsets, $namespace ) );
+  my ( $dbid, $accession, $name, $definition, $subsets, $ontology,
+       $namespace );
+  $sth->bind_columns( \( $dbid,    $accession, $name, $definition,
+                         $subsets, $ontology,  $namespace ) );
 
   my @terms;
 
   while ( $sth->fetch() ) {
     $subsets ||= '';
 
-    push(
-      @terms,
-      Bio::EnsEMBL::OntologyTerm->new(
-        '-dbid'       => $dbid,
-        '-adaptor'    => $this,
-        '-accession'  => $accession,
-        '-namespace'  => $namespace,
-        '-subsets'    => [ split( /,/, $subsets ) ],
-        '-name'       => $name,
-        '-definition' => $definition
-      ) );
+    push( @terms,
+          Bio::EnsEMBL::OntologyTerm->new(
+                               '-dbid'      => $dbid,
+                               '-adaptor'   => $this,
+                               '-accession' => $accession,
+                               '-ontology'  => $ontology,
+                               '-namespace' => $namespace,
+                               '-subsets' => [ split( /,/, $subsets ) ],
+                               '-name'    => $name,
+                               '-definition' => $definition ) );
   }
-
-  $sth->finish();
 
   return \@terms;
 } ## end sub fetch_all

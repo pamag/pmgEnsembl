@@ -1,11 +1,11 @@
-/DensityCalc.sh/1.7/Fri Feb  5 09:32:10 2010//Tbranch-ensembl-60
-/densities_multi_db.pl/1.3/Mon Aug  2 15:09:44 2004//Tbranch-ensembl-60
-/density_feature_fetch.pl/1.2/Thu Nov 19 12:56:06 2009//Tbranch-ensembl-60
-/gene_density_calc.pl/1.17/Tue May 11 16:21:57 2010//Tbranch-ensembl-60
-/glovar_snp_density.pl/1.9/Thu Nov 19 12:56:06 2009//Tbranch-ensembl-60
-/logicname_density_calc.pl/1.2/Mon Nov 29 11:09:26 2004//Tbranch-ensembl-60
-/percent_gc_calc.pl/1.16/Tue May 11 16:21:57 2010//Tbranch-ensembl-60
-/repeat_coverage_calc.pl/1.13/Tue Feb  2 09:47:38 2010//Tbranch-ensembl-60
-/seq_region_stats.pl/1.26/Thu Apr 15 15:22:09 2010//Tbranch-ensembl-60
-/variation_density.pl/1.14/Fri Sep 24 12:40:11 2010//Tbranch-ensembl-60
+/DensityCalc.sh/1.7/Fri Feb  5 09:32:10 2010//Tbranch-ensembl-62
+/densities_multi_db.pl/1.3/Mon Aug  2 15:09:44 2004//Tbranch-ensembl-62
+/density_feature_fetch.pl/1.2/Thu Nov 19 12:56:06 2009//Tbranch-ensembl-62
+/gene_density_calc.pl/1.20/Wed Mar  9 15:15:51 2011//Tbranch-ensembl-62
+/glovar_snp_density.pl/1.11/Tue Feb  8 12:54:22 2011//Tbranch-ensembl-62
+/logicname_density_calc.pl/1.3/Tue Feb  8 12:54:22 2011//Tbranch-ensembl-62
+/percent_gc_calc.pl/1.17/Thu Dec  9 15:58:01 2010//Tbranch-ensembl-62
+/repeat_coverage_calc.pl/1.15/Wed Mar  9 15:17:09 2011//Tbranch-ensembl-62
+/seq_region_stats.pl/1.28/Wed Mar  9 17:45:27 2011//Tbranch-ensembl-62
+/variation_density.pl/1.17/Wed Mar 16 10:40:53 2011//Tbranch-ensembl-62
 D

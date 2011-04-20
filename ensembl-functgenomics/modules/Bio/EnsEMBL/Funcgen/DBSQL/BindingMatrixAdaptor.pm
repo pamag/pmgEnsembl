@@ -1,32 +1,11 @@
 #
 # Ensembl module for Bio::EnsEMBL::Funcgen::DBSQL::BindingMatrixAdaptor
 #
-# You may distribute this module under the same terms as Perl itself
-
-=head1 NAME
-
-Bio::EnsEMBL::Funcgen::DBSQL::BindingMatrixAdaptor - A database adaptor for fetching and
-storing Funcgen BindingMatrix objects.
-
-=head1 SYNOPSIS
-
-my $matrix_adaptor = $db->get_BindingMatrixAdaptor();
-my $matrix = $matrix_adaptor->fetch_by_name("MA0122.1");
-
-=head1 DESCRIPTION
-
-The BindingMatrixAdaptor is a database adaptor for storing and retrieving
-Funcgen Matrix objects.
-
-
-=head1 SEE ALSO
-
-Bio::EnsEMBL::Funcgen::BindingMatrix
 
 
 =head1 LICENSE
 
-  Copyright (c) 1999-2009 The European Bioinformatics Institute and
+  Copyright (c) 1999-2011 The European Bioinformatics Institute and
   Genome Research Limited.  All rights reserved.
 
   This software is distributed under a modified Apache license.
@@ -42,6 +21,26 @@ Bio::EnsEMBL::Funcgen::BindingMatrix
   Questions may also be sent to the Ensembl help desk at
   <helpdesk@ensembl.org>.
 
+
+=head1 NAME
+
+Bio::EnsEMBL::Funcgen::DBSQL::BindingMatrixAdaptor - A database adaptor for fetching and
+storing Funcgen BindingMatrix objects.
+
+=head1 SYNOPSIS
+
+my $matrix_adaptor = $db->get_BindingMatrixAdaptor();
+my @matrices = @{$matrix_adaptor->fetch_all_by_name("MA0122.1")};
+
+=head1 DESCRIPTION
+
+The BindingMatrixAdaptor is a database adaptor for storing and retrieving
+Funcgen BindingMatrix objects.
+
+
+=head1 SEE ALSO
+
+Bio::EnsEMBL::Funcgen::BindingMatrix
 
 =cut
 
@@ -66,9 +65,9 @@ $true_tables{binding_matrix} = [['binding_matrix', 'bm']];
 =head2 fetch_all_by_name
 
   Arg [1]    : string - name of Matrix
-  Arg [2]    : string - (optional) type of Matrix (e.g. 'Jaspar')
-  Example    : my $matrix = $matrix_adaptor->fetch_all_by_name('MA0122.1');
-  Description: Fetches matrix objects given a name and an optional type.
+  Arg [2]    : Bio::EnsEMBL::Analysis (optional) Analysis indicating Matrix origin
+  Example    : my @matrices = @{$matrix_adaptor->fetch_all_by_name('MA0122.1')};
+  Description: Fetches matrix objects given a name and an optional Analysis object.
                If both are specified, only one unique BindingMatrix will be returned
   Returntype : Arrayref of Bio::EnsEMBL::Funcgen::BindingMatrix objects
   Exceptions : Throws if no name if defined
@@ -78,15 +77,15 @@ $true_tables{binding_matrix} = [['binding_matrix', 'bm']];
 =cut
 
 sub fetch_all_by_name{
-  my ($self, $name, $type) = @_;
+  my ($self, $name, $analysis) = @_;
 
   throw("Must specify a BindingMatrix name") if(! $name);
 
   my $constraint = " bm.name = ? ";
-  $constraint .= " AND bm.type = ?" if $type;
-  
+  $constraint .= " AND bm.analysis_id = ?" if $analysis;
+
   $self->bind_param_generic_fetch($name,         SQL_VARCHAR);
-  $self->bind_param_generic_fetch($type,         SQL_VARCHAR) if $type;
+  $self->bind_param_generic_fetch($analysis->dbID,     SQL_INTEGER) if $analysis;
 
   return $self->generic_fetch($constraint);
 }
@@ -95,28 +94,27 @@ sub fetch_all_by_name{
 
   Arg [1]    : string - name of Matrix
   Arg [2]    : Bio::EnsEMBL::Funcgen::FeatureType
-  Arg [3]    : string - (optional) type of Matrix (e.g. 'Jaspar')
-  Description: Fetches matrix objects given a name and an optional type.
-               If both are specified, only one unique BindingMatrix will be returned
+  Arg [3]    : Bio::EnsEMBL::Analysis (optional) Analysis indicating Matrix origin
+  Description: Fetches matrix objects given a name and a FeatureType.
   Returntype : Arrayref of Bio::EnsEMBL::Funcgen::BindingMatrix objects
-  Exceptions : Throws if no name if defined
+  Exceptions : Throws if no name if defined or if FeatureType is not valid
   Caller     : General
   Status     : At risk
 
 =cut
 
 sub fetch_all_by_name_FeatureType{
-  my ($self, $name, $ftype, $type) = @_;
+  my ($self, $name, $ftype, $analysis) = @_;
 
   throw("Must specify a BindingMatrix name") if(! $name);
-  #$self->db->is_stored_and_valid('Bio::EnsEMBL::Funcgen::FeatureType', $ftype);
+  $self->db->is_stored_and_valid('Bio::EnsEMBL::Funcgen::FeatureType', $ftype);
 
   my $constraint = " bm.name = ? and bm.feature_type_id = ?";
-  $constraint .= " AND bm.type = ?" if $type;
+  $constraint .= " AND bm.analysis_id = ?" if $analysis;
   
   $self->bind_param_generic_fetch($name,         SQL_VARCHAR);
   $self->bind_param_generic_fetch($ftype->dbID,  SQL_INTEGER);
-  $self->bind_param_generic_fetch($type,         SQL_VARCHAR) if $type;
+  $self->bind_param_generic_fetch($analysis->dbID,     SQL_INTEGER) if $analysis;
 
   return $self->generic_fetch($constraint);
 }
@@ -125,8 +123,8 @@ sub fetch_all_by_name_FeatureType{
 =head2 fetch_all_by_FeatureType
 
   Arg [1]    : Bio::EnsEMBL::Funcgen::FeatureType
-  Arg [2]    : string - (optional) type of Matrix (e.g. 'Jaspar')
-  Example    : my $matrix = $matrix_adaptor->fetch_by_FeatureType($ftype);
+  Arg [2]    : Bio::EnsEMBL::Analysis (optional) Analysis indicating Matrix origin
+  Example    : my @matrices = @{$matrix_adaptor->fetch_all_by_FeatureType($ftype)};
   Description: Fetches BindingMatrix objects given it's FeatureType
   Returntype : Bio::EnsEMBL::Funcgen::BindingMatrix
   Exceptions : Throws if FeatureType is not valid
@@ -136,15 +134,15 @@ sub fetch_all_by_name_FeatureType{
 =cut
 
 sub fetch_all_by_FeatureType{
-  my ($self, $ftype, $type) = @_;
+  my ($self, $ftype, $analysis) = @_;
 
   $self->db->is_stored_and_valid('Bio::EnsEMBL::Funcgen::FeatureType', $ftype);
 
   my $constraint = " bm.feature_type_id = ?";
-  $constraint .= " AND bm.type = ?" if $type;
+  $constraint .= " AND bm.analysis_id = ?" if $analysis;
 
   $self->bind_param_generic_fetch($ftype->dbID,  SQL_INTEGER);
-  $self->bind_param_generic_fetch($type,  SQL_VARCHAR) if $type;
+  $self->bind_param_generic_fetch($analysis->dbID,     SQL_INTEGER) if $analysis;
 
   return $self->generic_fetch($constraint);
 }
@@ -188,7 +186,7 @@ sub _tables {
 sub _columns {
   my $self = shift;
 	
-  return qw( bm.binding_matrix_id bm.name bm.type bm.frequencies bm.description bm.feature_type_id);
+  return qw( bm.binding_matrix_id bm.name bm.analysis_id bm.frequencies bm.description bm.feature_type_id);
 }
 
 =head2 _objs_from_sth
@@ -207,12 +205,14 @@ sub _columns {
 sub _objs_from_sth {
 	my ($self, $sth) = @_;
 	
-	my (@result, $matrix_id, $name, $type, $freq, $desc, $ftype_id);
-	
-	$sth->bind_columns(\$matrix_id, \$name, \$type, \$freq, \$desc, \$ftype_id);
-	
+	my (@result, $matrix_id, $name, $analysis_id, $freq, $desc, $ftype_id);
+	$sth->bind_columns(\$matrix_id, \$name, \$analysis_id, \$freq, \$desc, \$ftype_id);
+
 	my $ftype_adaptor = $self->db->get_FeatureTypeAdaptor;
 	my %ftype_cache;
+
+	my $analysis_adaptor = $self->db->get_AnalysisAdaptor;
+	my %analysis_cache;
 
 	while ( $sth->fetch() ) {
 
@@ -220,12 +220,15 @@ sub _objs_from_sth {
 		$ftype_cache{$ftype_id} = $ftype_adaptor->fetch_by_dbID($ftype_id);
 	  }
 
+	  if(! exists $analysis_cache{$analysis_id}){
+		$analysis_cache{$analysis_id} = $analysis_adaptor->fetch_by_dbID($analysis_id);
+	  }
 
 	  my $matrix = Bio::EnsEMBL::Funcgen::BindingMatrix->new
 		(
 		 -dbID         => $matrix_id,
 		 -NAME         => $name,
-		 -TYPE         => $type,
+		 -ANALYSIS     => $analysis_cache{$analysis_id},
 		 -FREQUENCIES  => $freq,
 		 -DESCRIPTION  => $desc,
 		 -FEATURE_TYPE => $ftype_cache{$ftype_id},
@@ -261,7 +264,7 @@ sub store {
   
   my $sth = $self->prepare("
 			INSERT INTO binding_matrix
-			(name, type, frequencies, description, feature_type_id)
+			(name, analysis_id, frequencies, description, feature_type_id)
 			VALUES (?, ?, ?, ?, ?)");
     
   my $s_matrix;
@@ -279,12 +282,12 @@ sub store {
     if (!( $matrix->dbID() && $matrix->adaptor() == $self )){
       
       #Check for previously stored BindingMatrix
-      ($s_matrix) = @{$self->fetch_all_by_name_FeatureType($matrix->name(), $matrix->feature_type, $matrix->type())};
+      ($s_matrix) = @{$self->fetch_all_by_name_FeatureType($matrix->name(), $matrix->feature_type, $matrix->analysis())};
 	
       if(! $s_matrix){
       	
 		$sth->bind_param(1, $matrix->name(),               SQL_VARCHAR);
-		$sth->bind_param(2, $matrix->type(),               SQL_VARCHAR);
+		$sth->bind_param(2, $matrix->analysis()->dbID(),   SQL_INTEGER);
 		$sth->bind_param(3, $matrix->frequencies(),        SQL_LONGVARCHAR);
 		$sth->bind_param(4, $matrix->description(),        SQL_VARCHAR);
 		$sth->bind_param(5, $matrix->feature_type->dbID(), SQL_INTEGER);
@@ -312,11 +315,11 @@ sub store {
 =head2 list_dbIDs
 
   Args       : None
-  Example    : my @amtrix_ids = @{$matrix_adaptor->list_dbIDs()};
+  Example    : my @matrix_ids = @{$matrix_adaptor->list_dbIDs()};
   Description: Gets an array of internal IDs for all Matrix objects in the current database.
-  Returntype : List of ints
+  Returntype : ArrayRef of BindingMatrix
   Exceptions : None
-  Caller     : ?
+  Caller     : General
   Status     : At risk
 
 =cut

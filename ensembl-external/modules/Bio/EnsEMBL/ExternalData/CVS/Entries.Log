@@ -1,4 +1,5 @@
 A D/BAM////
+A D/BigFile////
 A D/CDSTrack////
 A D/CancerGenomeProject////
 A D/DAS////
@@ -15,6 +16,7 @@ A D/RikenSQL////
 A D/SNPSQL////
 A D/SangerSNP////
 A D/TRACESQL////
+A D/VCF////
 R D/TRACESQL////
 R D/RikenSQL////
 R D/ESTSQL////

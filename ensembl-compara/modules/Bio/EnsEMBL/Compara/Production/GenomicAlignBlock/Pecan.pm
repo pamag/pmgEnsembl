@@ -151,6 +151,7 @@ sub run
 {
   my $self = shift;
 
+  $self->{'comparaDBA'}->dbc->disconnect_when_inactive(1); 
   my $runnable = new Bio::EnsEMBL::Analysis::Runnable::Pecan(
       -workdir => $self->worker_temp_directory,
       -fasta_files => $self->fasta_files,
@@ -161,6 +162,7 @@ sub run
       );
   $self->{'_runnable'} = $runnable;
   $runnable->run_analysis;
+  $self->{'comparaDBA'}->dbc->disconnect_when_inactive(0);
 }
 
 sub write_output {
@@ -181,6 +183,13 @@ sub write_output {
 
   my $gaga = $self->{'comparaDBA'}->get_GenomicAlignGroupAdaptor;
 
+  #
+  #Start transaction
+  #
+  my $dbh = $self->{'comparaDBA'}->dbc->db_handle;
+  my $rc = $dbh->begin_work or die $dbh->errstr;
+
+  eval {
   foreach my $gab (@{$self->{'_runnable'}->output}) {
       foreach my $ga (@{$gab->genomic_align_array}) {
 	  $ga->adaptor($gaa);
@@ -263,6 +272,17 @@ $gab->_print(\*STDERR);
 	  $self->_write_gerp_dataflow($gab, $mlss);
       }
   }
+  #
+  #Commit transaction
+  #
+  $dbh->commit;
+  }; #end eval
+
+  if($@) {
+      eval {$dbh->rollback};
+      throw "Transaction aborted because $@";
+  }
+
   return 1;
 }
 
@@ -581,9 +601,9 @@ sub get_species_tree {
   foreach my $leaf (@{$species_tree->get_all_leaves}) {
       #check have names rather than genome_db_ids
       if ($leaf->name =~ /\D+/) {
-	  $leaf->name($leaf_name{$leaf->name});
+	  $leaf->name($leaf_name{lc($leaf->name)});
       }
-      $leaf_check{$leaf->name}++;
+      $leaf_check{lc($leaf->name)}++;
   }
 
   #Check have one instance in the tree of each genome_db in the database

@@ -1,3 +1,23 @@
+=head1 LICENSE
+
+ Copyright (c) 1999-2011 The European Bioinformatics Institute and
+ Genome Research Limited.  All rights reserved.
+
+ This software is distributed under a modified Apache license.
+ For license details, please see
+
+   http://www.ensembl.org/info/about/code_licence.html
+
+=head1 CONTACT
+
+ Please email comments or questions to the public Ensembl
+ developers list at <dev@ensembl.org>.
+
+ Questions may also be sent to the Ensembl help desk at
+ <helpdesk@ensembl.org>.
+
+=cut
+
 #
 # Ensembl module for Bio::EnsEMBL::Variation::DBSQL::BaseGenotypeAdaptor
 #
@@ -30,12 +50,6 @@ $genotypes = $ig_adaptor->fetch_sll_by_Slice($slice);
 This adaptor provides database connectivity for IndividualGenotype objects.
 IndividualGenotypes may be retrieved from the Ensembl variation database by
 several means using this module.
-
-=head1 AUTHOR - Daniel Rios
-
-=head1 CONTACT
-
-Post questions to the Ensembl development list ensembl-dev@ebi.ac.uk
 
 =head1 METHODS
 
@@ -74,31 +88,53 @@ use Bio::EnsEMBL::Utils::Sequence qw(reverse_comp);
 sub fetch_all_by_Variation {
     my $self = shift;
     my $variation = shift;
+	my $individual = shift;
 
     if(!ref($variation) || !$variation->isa('Bio::EnsEMBL::Variation::Variation')) {
-	throw('Bio::EnsEMBL::Variation::Variation argument expected');
+		throw('Bio::EnsEMBL::Variation::Variation argument expected');
     }
 
     if(!defined($variation->dbID())) {
-	warning("Cannot retrieve genotypes for variation without set dbID");
-	return [];
-    }	  
+		warning("Cannot retrieve genotypes for variation without set dbID");
+		return [];
+    }
+	
+	my $constraint = '';
+	
+	# individual can be an individual or a population
+	if (defined $individual && defined $individual->dbID){
+	  
+	  if($individual->isa("Bio::EnsEMBL::Variation::Population")) {
+		my $inds = $individual->get_all_Individuals;
+		my @list;
+		push @list, $_->dbID foreach @$inds;
+		my $instr = (@list > 1)  ? " IN (".join(',',@list).")"   :   ' = \''.$list[0].'\'';
+		$constraint = " ig.sample_id $instr AND ";
+	  }
+	  else {
+		$constraint = ' ig.sample_id = '.$individual->dbID.' AND ';
+	  }
+	}
+	
     my $res;
     if (!$self->_multiple){
-	push @{$res},@{$self->generic_fetch("ig.variation_id = " . $variation->dbID())}; #to select data from individual_genotype_single_bp
+	push @{$res},@{$self->generic_fetch($constraint."ig.variation_id = " . $variation->dbID())}; #to select data from individual_genotype_single_bp
 	$self->_multiple(1);
     }
-    push @{$res}, @{$self->generic_fetch("ig.variation_id = " . $variation->dbID())}; #to select data from individual_genotype_multiple_bp
+    push @{$res}, @{$self->generic_fetch($constraint."ig.variation_id = " . $variation->dbID())}; #to select data from individual_genotype_multiple_bp
     return $res;
 }
 
 sub _tables{
     my $self = shift;
 
-    return (['individual_genotype_single_bp','ig'],['variation_feature','vf']) if (!$self->_multiple);
-    return (['individual_genotype_multiple_bp','ig'],['variation_feature','vf']) if ($self->_multiple);
+    return (['individual_genotype_single_bp','ig'],['variation_feature','vf'],['failed_variation','fv']) if (!$self->_multiple);
+    return (['variation_feature','vf'],['individual_genotype_multiple_bp','ig'],['failed_variation','fv']) if ($self->_multiple);
     
 }
+
+#ÊAdd a left join to the failed_variation table
+sub _left_join { return ([ 'failed_variation', 'fv.variation_id = vf.variation_id']); }
 
 sub _columns{
     return qw(ig.sample_id ig.variation_id ig.allele_1 ig.allele_2 vf.seq_region_id vf.seq_region_start vf.seq_region_end vf.seq_region_strand);
@@ -120,7 +156,9 @@ sub _objs_from_sth{
     # function calls as possible for speed purposes.  Thus many caches and
     # a fair bit of gymnastics is used.
     #
-    
+
+    #warn $sth->sql;
+
     my $sa = $self->db()->dnadb()->get_SliceAdaptor();
     
     my @results;
@@ -209,9 +247,10 @@ sub _objs_from_sth{
 		$seq_region_end   = $seq_region_end   - $dest_slice_start + 1;
 	    } else {
 		my $tmp_seq_region_start = $seq_region_start;
-		$seq_region_start = $dest_slice_end - $seq_region_end + 1;
+        #$seq_region_start = $dest_slice_end - $seq_region_end + 1;
+        $seq_region_start = $seq_region_start - $dest_slice_start + 1;
 		$seq_region_end   = $dest_slice_end - $tmp_seq_region_start + 1;
-		$seq_region_strand *= -1;
+		#$seq_region_strand *= -1;
 	    }
 	    
 	    #throw away features off the end of the requested slice
@@ -226,7 +265,7 @@ sub _objs_from_sth{
 	$seq_region_strand = 1;
 	reverse_comp(\$allele_1);
 	reverse_comp(\$allele_2);
-	$slice->{'strand'} = -1;
+    #$slice->{'strand'} = -1;
     }
     my $igtype = Bio::EnsEMBL::Variation::IndividualGenotypeFeature->new_fast({
 	'start'    => $seq_region_start,
@@ -237,7 +276,7 @@ sub _objs_from_sth{
 	'allele2' => $allele_2,
     });
     $individual_hash{$sample_id} ||= [];
-    $variation_hash{$sample_id} ||=[];
+    $variation_hash{$variation_id} ||=[];
     push @{$individual_hash{$sample_id}}, $igtype;
     push @{$variation_hash{$variation_id}},$igtype;
     push @results, $igtype;

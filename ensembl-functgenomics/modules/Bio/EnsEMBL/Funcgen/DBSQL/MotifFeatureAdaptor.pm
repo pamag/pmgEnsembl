@@ -292,6 +292,7 @@ sub _columns {
 			mf.seq_region_start   mf.seq_region_end
 			mf.seq_region_strand  mf.binding_matrix_id
 			mf.display_label      mf.score
+			mf.interdb_stable_id
 		   );
 }
 
@@ -327,7 +328,8 @@ sub _objs_from_sth {
 	    $motif_feature_id,  $efg_seq_region_id,
 	    $seq_region_start,  $seq_region_end,
 	    $seq_region_strand, $bm_id,
-		$display_label,     $score, 
+		$display_label,     $score,
+		$stable_id
 	);
 
 	$sth->bind_columns(
@@ -335,6 +337,7 @@ sub _objs_from_sth {
 					   \$seq_region_start,  \$seq_region_end,
 					   \$seq_region_strand, \$bm_id,
 					   \$display_label,     \$score,
+					   \$stable_id
 					  );
 
 	my $asm_cs;
@@ -456,6 +459,7 @@ sub _objs_from_sth {
 			'score'          => $score,
 			'display_label'  => $display_label,
 			'binding_matrix' => $bm_hash{$bm_id},
+			'interdb_stable_id',    => $stable_id,
 		   } );
 	}
 	
@@ -489,8 +493,8 @@ sub store{
 		INSERT INTO motif_feature (
 			seq_region_id,   seq_region_start,
 			seq_region_end,  seq_region_strand,
-            binding_matrix_id,  display_label, score
-		) VALUES (?, ?, ?, ?, ?, ?, ?)
+            binding_matrix_id,  display_label, score, interdb_stable_id
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
 	");
 	
 	my $db = $self->db();
@@ -517,14 +521,23 @@ sub store{
 		
 	  my $seq_region_id;
 	  ($mf, $seq_region_id) = $self->_pre_store($mf);
+
+	  my $dlabel = $mf->display_label;
+
+	  if(! defined $dlabel){
+		$dlabel = $mf->binding_matrix->feature_type->name.':'
+		  .$mf->binding_matrix->name();
+	  }
 	  
 	  $sth->bind_param(1, $seq_region_id,              SQL_INTEGER);
 	  $sth->bind_param(2, $mf->start(),                SQL_INTEGER);
 	  $sth->bind_param(3, $mf->end(),                  SQL_INTEGER);
 	  $sth->bind_param(4, $mf->strand(),               SQL_TINYINT);
 	  $sth->bind_param(5, $mf->binding_matrix->dbID(), SQL_INTEGER);
-	  $sth->bind_param(6, $mf->display_label(),        SQL_VARCHAR);
+	  $sth->bind_param(6, $dlabel,                     SQL_VARCHAR);
 	  $sth->bind_param(7, $mf->score(),                SQL_DOUBLE);
+	  $sth->bind_param(8, $mf->interdb_stable_id(),           SQL_INTEGER);
+
 	  $sth->execute();
 
 	  $mf->dbID( $sth->{'mysql_insertid'} );	  		
@@ -619,6 +632,26 @@ sub store_associated_AnnotatedFeature{
 
 
 
+=head2 fetch_by_interdb_stable_id
+
+  Arg [1]    : Integer $stable_id - The 'interdb stable id' of the motif feature to retrieve
+  Example    : my $rf = $rf_adaptor->fetch_by_interdb_stable_id(1);
+  Description: Retrieves a motif feature via its stable id. This is really an internal
+               method to facilitate inter DB linking. 
+  Returntype : Bio::EnsEMBL::Funcgen::MotifFeature
+  Exceptions : none
+  Caller     : general
+  Status     : Stable
+
+=cut
+
+sub fetch_by_interdb_stable_id {
+  my ($self, $stable_id) = @_;
+
+  $self->bind_param_generic_fetch($stable_id, SQL_INTEGER);
+
+  return $self->generic_fetch('mf.interdb_stable_id=?')->[0];
+}
 
 
 1;

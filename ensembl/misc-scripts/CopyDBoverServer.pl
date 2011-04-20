@@ -92,6 +92,9 @@ Command line switches:
                     NOTE: This switch will not ever force overwriting of
                     a server database directory.
 
+                    NOTE: Using --force will bypass the table
+                    optimization step.
+
   --only_tables=XXX,YYY
                     (Optional)
                     Only copy the tables specified in the
@@ -179,6 +182,11 @@ if ( defined($opt_skip_tables) && defined($opt_only_tables) ) {
   die("Can't use both --only_tables and --skip_tables\n");
 }
 
+if ( $opt_force && $opt_optimize ) {
+  print("Note: Using --force will bypass optimization.\n");
+  $opt_optimize = 0;
+}
+
 my %only_tables;
 if ( defined($opt_only_tables) ) {
   %only_tables = map( { $_ => 1 } split( /,/, $opt_only_tables ) );
@@ -199,7 +207,7 @@ if ( !defined($input_file) ) {
   exit 1;
 }
 
-my %executables = ( 'myisamchk' => '/software/farm/mysql/bin/myisamchk',
+my %executables = ( 'myisamchk' => '/usr/local/ensembl/mysql/bin/myisamchk',
                     'rsync'     => '/usr/bin/rsync' );
 
 my $run_hostname = ( gethostbyname( hostname() ) )[0];
@@ -543,15 +551,29 @@ foreach my $spec (@todo) {
 
   if ( defined($opt_only_tables) ) {
     push( @copy_cmd, '--include=db.opt' );
+
     push( @copy_cmd,
           map { sprintf( '--include=%s.*', $_ ) }
             keys(%only_tables) );
+
+    # Partitioned tables:
+    push( @copy_cmd,
+          map { sprintf( '--include=%s#P#*.*', $_ ) }
+            keys(%only_tables) );
+
     push( @copy_cmd, "--exclude=*" );
   } elsif ( defined($opt_skip_tables) ) {
     push( @copy_cmd, '--include=db.opt' );
+
     push( @copy_cmd,
           map { sprintf( '--exclude=%s.*', $_ ) }
             keys(%skip_tables) );
+
+    # Partitioned tables:
+    push( @copy_cmd,
+          map { sprintf( '--exclude=%s#P#*.*', $_ ) }
+            keys(%skip_tables) );
+
     push( @copy_cmd, "--include=*" );
   }
 

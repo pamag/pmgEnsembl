@@ -13,7 +13,7 @@ use Bio::EnsEMBL::Utils::Eprof qw(eprof_start eprof_end eprof_dump);
 
 my $method_link_type = "ENSEMBL_ORTHOLOGUES";
 
-my ($conf, $registryconf, $version, $compara, $from_species, @to_multi, $print, $names, $go_terms, $delete_names, $delete_go_terms, $no_backup, $full_stats, $descriptions, $release, $no_database, $quiet, $max_genes, $one_to_many, $go_check, $all_sources, $delete_only);
+my ($conf, $registryconf, $version, $compara, $from_species, @to_multi, $print, $names, $go_terms, $delete_names, $delete_go_terms, $no_backup, $full_stats, $descriptions, $release, $no_database, $quiet, $max_genes, $one_to_many, $go_check, $all_sources, $delete_only,  $to_species, $from_gene);
 
 GetOptions('conf=s'          => \$conf,
 	   'registryconf=s'  => \$registryconf,
@@ -121,11 +121,9 @@ if (defined($registryconf)) {
 	}
 }
 
-
-
 Bio::EnsEMBL::Registry->load_registry_from_multiple_dbs(@{$args});
 
-Bio::EnsEMBL::Registry->load_all($conf, 1, 1); # options mean "not verbose" and "don't clear registry"
+Bio::EnsEMBL::Registry->load_all($conf, 0, 1); # options mean "not verbose" and "don't clear registry"
 
 # only delete names/GO terms if -delete_only has been specified
 if ($delete_only) {
@@ -176,8 +174,9 @@ my $from_ga = Bio::EnsEMBL::Registry->get_adaptor($from_species, 'core', 'Gene')
 my %projections_by_evidence_type;
 my %projections_by_source;
 
-foreach my $to_species (@to_multi) {
+foreach my $local_to_species (@to_multi) {
 
+  $to_species = $local_to_species;
   my $to_ga   = Bio::EnsEMBL::Registry->get_adaptor($to_species, 'core', 'Gene');
   die("Can't get gene adaptor for $to_species - check database connection details; make sure meta table contains the correct species alias\n") if (!$to_ga);
   my $to_dbea = Bio::EnsEMBL::Registry->get_adaptor($to_species, 'core', 'DBEntry');
@@ -230,7 +229,7 @@ foreach my $to_species (@to_multi) {
 
     $i++;
 
-    my $from_gene = $from_ga->fetch_by_stable_id($from_stable_id);
+    $from_gene = $from_ga->fetch_by_stable_id($from_stable_id);
 
     next if (!$from_gene);
 
@@ -314,8 +313,7 @@ sub project_display_names {
       # other xrefs from this dbname as assigned to (see build_db_to_type)
       # Note that if type is not found, it means that we're dealing with a db that has no
       # xrefs in the target database, e.g. MarkerSymbol in mouse -> rat
-      # In this case just assign to transcripts, except for special cases (e.g. 
-      # HGNC_curated_gene should always go to genes
+      # In this case just assign to genes
 
       my @to_transcripts = @{$to_gene->get_all_Transcripts};
       my $to_transcript = $to_transcripts[0];
@@ -324,12 +322,12 @@ sub project_display_names {
 
       my $type = $db_to_type{$dbname};
 
-      if ($type eq "Gene" || $dbname =~ /HGNC_.*gene/) {
+      if ($type eq "Gene" || $dbname eq 'HGNC' || !$type) {
 
 	$to_gene->add_DBEntry($dbEntry);
 	$to_dbea->store($dbEntry, $to_gene->dbID(), 'Gene', 1) if (!$print);
 
-      } elsif ($type eq "Transcript" || $dbname =~ /HGNC_.*transcript/ || !$type) {
+      } elsif ($type eq "Transcript" || $dbname eq 'HGNC_transcript_name') {
 	
 	$to_transcript->add_DBEntry($dbEntry);
 	$to_dbea->store($dbEntry, $to_transcript->dbID(), 'Transcript', 1) if (!$print);
@@ -389,7 +387,7 @@ sub project_go_terms {
 
  DBENTRY: foreach my $dbEntry (@{$from_translation->get_all_DBEntries("GO")}) { 
 
-    next if (!$dbEntry || $dbEntry->dbname() ne "GO" || ref($dbEntry) ne "Bio::EnsEMBL::GoXref");
+    next if (!$dbEntry || $dbEntry->dbname() ne "GO" || ref($dbEntry) ne "Bio::EnsEMBL::OntologyXref");
 
     # Skip the whole dbEntry if one or more if its evidence codes isn't in the whitelist
     foreach my $et (@{$dbEntry->get_all_linkage_types}){
@@ -430,7 +428,7 @@ sub go_xref_exists {
 
   foreach my $xref (@{$to_go_xrefs}) {
 
-    next if (ref($dbEntry) ne "Bio::EnsEMBL::GoXref" || ref($xref) ne "Bio::EnsEMBL::GoXref");
+    next if (ref($dbEntry) ne "Bio::EnsEMBL::OntologyXref" || ref($xref) ne "Bio::EnsEMBL::OntologyXref");
 
     if ($xref->dbname() eq $dbEntry->dbname() &&
 	$xref->primary_id() eq $dbEntry->primary_id() &&
@@ -594,7 +592,8 @@ sub delete_names {
   print "Deleting projected xrefs, object_xrefs and synonyms\n";
   $sth = $to_ga->dbc()->prepare("DELETE es FROM xref x, external_synonym es WHERE x.xref_id=es.xref_id AND x.info_type='PROJECTION'");
   $sth->execute();
-  $sth = $to_ga->dbc()->prepare("DELETE x, ox FROM xref x, object_xref ox WHERE x.xref_id=ox.xref_id AND x.info_type='PROJECTION'");
+  # avoid deleting projected GO terms - only want to delete the names here
+  $sth = $to_ga->dbc()->prepare("DELETE x, ox FROM xref x, object_xref ox, external_db e WHERE x.xref_id=ox.xref_id AND x.external_db_id=e.external_db_id AND x.info_type='PROJECTION' AND e.db_name!='GO'");
   $sth->execute();
 
 }
@@ -607,7 +606,7 @@ sub delete_go_terms {
 
   print "Deleting projected GO terms\n";
 
-  my $sth = $to_ga->dbc()->prepare("DELETE x, ox, gx FROM xref x, external_db e, object_xref ox, go_xref gx WHERE x.xref_id=ox.xref_id AND x.external_db_id=e.external_db_id AND ox.object_xref_id=gx.object_xref_id AND e.db_name='GO' AND x.info_type='PROJECTION'");
+  my $sth = $to_ga->dbc()->prepare("DELETE x, ox, gx FROM xref x, external_db e, object_xref ox, ontology_xref gx WHERE x.xref_id=ox.xref_id AND x.external_db_id=e.external_db_id AND ox.object_xref_id=gx.object_xref_id AND e.db_name='GO' AND x.info_type='PROJECTION'");
   $sth->execute();
 
   # note don't need to delete synonyms as GO terms don't have any
@@ -634,17 +633,60 @@ sub check_overwrite_display_xref {
 
     if (($from_species eq "human" && $from_dbname =~ /HGNC/) ||
 	($from_species eq "mouse" && $from_dbname =~ /MarkerSymbol/)) {
-
+	if($to_species eq "zebrafish" and is_in_blacklist($from_gene->display_xref)){
+	    return 0;
+	}
       return 1;
 
     }
 
+  }
+  elsif ($to_species eq "zebrafish"){
+
+    my $to_dbEntry = $to_gene->display_xref();
+    my $from_dbEntry = $from_gene->display_xref();
+    my $return = 0;
+
+    return 1 if ($to_dbname eq "Clone_based_ensembl_gene" or $to_dbname eq "Clone_based_vega_gene");
+
+    if ($from_dbEntry->display_id =~ /C(\d+)orf(\d+)/){
+      $from_dbEntry->display_id("hsC".$1."orf".$2."-like");
+      return 1;
+    }
+
+    if (!defined ($to_dbEntry) || (($to_dbEntry->display_id =~ /:/) and $to_dbname eq "ZFIN_ID") ){
+      if (is_in_blacklist($from_dbEntry)){
+	return 0;
+      }
+      else{
+	return 1;
+      }
+    }
   }
 
   return 0;
 
 }
 
+
+sub is_in_blacklist{
+    my ($dbentry) = shift;
+
+    if (($dbentry->display_id =~ /KIAA/) || ( $dbentry->display_id =~ /LOC/)){
+	return 1; # return yes that have found gene names that match the regular expression
+    }
+    elsif ($dbentry->display_id =~ /\-/){
+	return 1;
+    }
+    elsif ($dbentry->display_id =~ /\D{2}\d{6}\.\d+/){
+	#print "black listed item found ".$dbentry->display_id."\n";
+	return 1;
+    }
+    else{
+	return 0;
+    }
+    
+}
 # ----------------------------------------------------------------------
 
 sub backup {
@@ -712,7 +754,7 @@ sub fetch_homologies {
   print "Fetching Compara homologies\n";
 
   my $from_species_alias = lc(Bio::EnsEMBL::Registry->get_alias($from_species));
-  $from_species_alias =~ tr/_/ /;
+ 
 
   my %homology_cache;
 
@@ -727,6 +769,7 @@ sub fetch_homologies {
     # order of member-attributes is arbitrary, so need to find which one corresponds to the "from" species
     my @to_stable_ids;
     my $from_stable_id;
+
     foreach my $ma (@mas) {
 
       my ($member, $attribute) = @{$ma};
@@ -734,6 +777,7 @@ sub fetch_homologies {
       if (lc($member->genome_db()->name()) eq $from_species_alias) {
 	$from_stable_id = $member->stable_id();
       } else {
+	  
 	push @to_stable_ids, $member->stable_id();
       }
     }
@@ -807,9 +851,9 @@ sub clean_up {
 
   $to_dbc->do("DROP TABLE IF EXISTS tmp_gx");
 
-  $to_dbc->do("CREATE TEMPORARY TABLE tmp_gx SELECT gx.object_xref_id FROM go_xref gx LEFT JOIN object_xref ox ON ox.object_xref_id=gx.object_xref_id WHERE ox.object_xref_id IS NULL");
+  $to_dbc->do("CREATE TEMPORARY TABLE tmp_gx SELECT gx.object_xref_id FROM ontology_xref gx LEFT JOIN object_xref ox ON ox.object_xref_id=gx.object_xref_id WHERE ox.object_xref_id IS NULL");
 
-  $to_dbc->do("DELETE FROM go_xref WHERE object_xref_id IN (SELECT object_xref_id FROM tmp_gx)");
+  $to_dbc->do("DELETE FROM ontology_xref WHERE object_xref_id IN (SELECT object_xref_id FROM tmp_gx)");
 
   $to_dbc->do("DROP TABLE tmp_gx");
 

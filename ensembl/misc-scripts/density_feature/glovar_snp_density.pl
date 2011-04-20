@@ -66,7 +66,7 @@ Patrick Meidl <pm2@sanger.ac.uk>
 
 =head1 CONTACT
 
-Post questions to the EnsEMBL development list ensembl-dev@ebi.ac.uk
+Post questions to the EnsEMBL development list dev@ensembl.org
 
 =cut
 
@@ -153,7 +153,7 @@ my $analysis = Bio::EnsEMBL::Analysis->new(
         -database    => "vega",
         -gff_source  => "glovar_snp_density.pl",
         -gff_feature => "density",
-        -logic_name  => "snpDensity",
+        -logic_name  => "snpdensity",
 );
 $aa->store( $analysis ) unless ($support->param('dry_run'));
 

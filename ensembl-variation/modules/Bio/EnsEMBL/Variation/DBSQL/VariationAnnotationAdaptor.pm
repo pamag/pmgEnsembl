@@ -1,3 +1,23 @@
+=head1 LICENSE
+
+ Copyright (c) 1999-2011 The European Bioinformatics Institute and
+ Genome Research Limited.  All rights reserved.
+
+ This software is distributed under a modified Apache license.
+ For license details, please see
+
+   http://www.ensembl.org/info/about/code_licence.html
+
+=head1 CONTACT
+
+ Please email comments or questions to the public Ensembl
+ developers list at <dev@ensembl.org>.
+
+ Questions may also be sent to the Ensembl help desk at
+ <helpdesk@ensembl.org>.
+
+=cut
+
 
 # Ensembl module for Bio::EnsEMBL::Variation::DBSQL::VariationAnnotationAdaptor
 #
@@ -26,18 +46,12 @@ Bio::EnsEMBL::Variation::DBSQL::VariationAnnotationAdaptor
   $v = $va->fetch_by_name('rs56');
 
   foreach $va (@{$vaa->fetch_all_by_Variation($v)}) {
-    print $va->phenotype_name(), $va->phenotype_description(), $va->source_name(), $va->study_type(), $va->local_stable_id(),"\n";
+    print $va->phenotype_name(), $va->phenotype_description(), $va->source_name(), $va->study_type(),"\n";
   }
 
 =head1 DESCRIPTION
 
 This adaptor provides database connectivity between Variation and VariationAnnotation objects.
-
-=head1 AUTHOR - Yuan Chen
-
-=head1 CONTACT
-
-Post questions to the Ensembl development list ensembl-dev@ebi.ac.uk
 
 =head1 METHODS
 
@@ -50,9 +64,9 @@ package Bio::EnsEMBL::Variation::DBSQL::VariationAnnotationAdaptor;
 
 use Bio::EnsEMBL::Variation::Variation;
 use Bio::EnsEMBL::Variation::VariationAnnotation;
+use Bio::EnsEMBL::Variation::DBSQL::StudyAdaptor;
 use Bio::EnsEMBL::Utils::Exception qw(throw warning);
 use Bio::EnsEMBL::DBSQL::BaseFeatureAdaptor;
-
 
 our @ISA = ('Bio::EnsEMBL::DBSQL::BaseFeatureAdaptor');
 
@@ -164,10 +178,13 @@ sub fetch_all_by_phenotype_name_source_name {
 
   throw('phenotype_name argument expected') if(!defined($phenotype_name));
 
-  my $extra_sql = " p.name = ? ";
+  my $extra_sql = " p.name = $phenotype_name ";
   if (defined $source_name ) {
-    $extra_sql .= qq( AND s.name = ?);
+    $extra_sql .= qq( AND s.name = '$source_name' );
   }
+  
+  # Add the constraint for failed variations
+  $extra_sql .= " AND " . $self->db->_exclude_failed_variations_constraint();
   
   return $self->generic_fetch("$extra_sql");
   
@@ -194,10 +211,13 @@ sub fetch_all_by_phenotype_description_source_name {
 
   throw('phenotype_description argument expected') if(!defined($phenotype_description));
 
-  my $extra_sql = qq( p.description like '%?%' );
+  my $extra_sql = qq( p.description like '%$phenotype_description%' );
   if (defined $source_name ) {
-    $extra_sql .= qq( AND s.name = ?);
+    $extra_sql .= qq( AND s.name = '$source_name' );
   }
+  
+  # Add the constraint for failed variations
+  $extra_sql .= " AND " . $self->db->_exclude_failed_variations_constraint();
   
   return $self->generic_fetch("$extra_sql");
   
@@ -227,8 +247,31 @@ sub fetch_all_by_phenotype_id_source_name {
   my $extra_sql = sprintf('p.phenotype_id = %s', $self->dbc->db_handle->quote( $phenotype_id, SQL_INTEGER ) );
 
   if (defined $source_name ) {
-    $extra_sql .= sprintf(' AND s.name = %s', $self->dbc->db_handle->quote( $source_name, SQL_VARCHAR ) );
+    $extra_sql .= sprintf(" AND s.name = '%s'", $self->dbc->db_handle->quote( $source_name, SQL_VARCHAR ) );
   }
+  
+  # Add the constraint for failed variations
+  $extra_sql .= " AND " . $self->db->_exclude_failed_variations_constraint();
+  
+  return $self->generic_fetch("$extra_sql");
+  
+}
+
+=head2 fetch_all
+
+  Description: Retrieves all available variation annotation objects
+  Returntype : list of ref of Bio::EnsEMBL::Variation::VariationAnnotation
+  Exceptions : none
+  Caller     : general
+
+=cut
+
+sub fetch_all {
+
+  my $self = shift;
+  
+  # Add the constraint for failed variations
+  my $extra_sql = $self->db->_exclude_failed_variations_constraint();
   
   return $self->generic_fetch("$extra_sql");
   
@@ -236,22 +279,26 @@ sub fetch_all_by_phenotype_id_source_name {
 
 # method used by superclass to construct SQL
 sub _tables { return (['variation_annotation', 'va'],
-                       [ 'phenotype', 'p'],
-                       [ 'source', 's']); 
+                      [ 'failed_variation', 'fv'],
+                      [ 'phenotype', 'p'],
+											[ 'study', 'st'],
+                      [ 'source', 's']); 
 }
+
+# Add a left join to the failed_variation table
+sub _left_join { return ([ 'failed_variation', 'fv.variation_id = va.variation_id']); }
 
 sub _default_where_clause {
   my $self = shift;
 
-  return 'va.phenotype_id = p.phenotype_id AND va.source_id = s.source_id';
+  return 'va.phenotype_id = p.phenotype_id AND st.source_id = s.source_id AND va.study_id=st.study_id';
 }
 
 sub _columns {
   return qw( va.variation_annotation_id va.variation_id p.phenotype_id p.name p.description
-             s.name va.study va.study_type va.local_stable_id
-             va.associated_gene va.associated_variant_risk_allele
-	     va.variation_names va.risk_allele_freq_in_controls va.p_value
-             );
+             va.study_id va.associated_gene va.associated_variant_risk_allele
+	         	 va.variation_names va.risk_allele_freq_in_controls va.p_value
+           );
 }
 
 
@@ -261,27 +308,37 @@ sub _objs_from_sth {
 
   my @features;
 
-  my ($variation_annotation_id,$var_id,$phenotype_id,$phenotype_name,$phenotype_description,$source_name,$study,$study_type,$local_stable_id,$associated_gene,$associated_variant_risk_allele,$variation_names,$risk_allele_freq_in_controls,$p_value);
-  $sth->bind_columns(\$variation_annotation_id,\$var_id,\$phenotype_id,\$phenotype_name,\$phenotype_description,\$source_name,\$study,\$study_type,\$local_stable_id,\$associated_gene,\$associated_variant_risk_allele,\$variation_names,\$risk_allele_freq_in_controls, \$p_value);
-
+  my ($variation_annotation_id,$var_id,$phenotype_id,$phenotype_name,$phenotype_description,
+      $study_id,$associated_gene,$associated_variant_risk_allele,$variation_names,
+	  	$risk_allele_freq_in_controls,$p_value,$last_va_id,$study);
+  $sth->bind_columns(\$variation_annotation_id,\$var_id,\$phenotype_id,\$phenotype_name,
+                     \$phenotype_description,\$study_id,
+					 					 \$associated_gene,\$associated_variant_risk_allele,\$variation_names,
+					 					 \$risk_allele_freq_in_controls,\$p_value);
+	
+	my $sta = $self->db()->get_StudyAdaptor();
+	
   while($sth->fetch()) {
+    
+    next if (defined($last_va_id) && $last_va_id == $variation_annotation_id);
+    $last_va_id = $variation_annotation_id;
+    
+		$study = $sta->fetch_by_dbID($study_id);
+		
     push @features, $self->_create_feature_fast('Bio::EnsEMBL::Variation::VariationAnnotation',
 
     {'dbID' => $variation_annotation_id,
      '_variation_id'         => $var_id,
-	 '_phenotype_id'		 => $phenotype_id,
+	   '_phenotype_id'		     => $phenotype_id,
      'phenotype_name'        => $phenotype_name,
      'phenotype_description' => $phenotype_description,
-     'source_name'           => $source_name,
-     'study'                 => $study,
-     'study_type'            => $study_type,
-     'local_stable_id'       => $local_stable_id,
      'associated_gene'       => $associated_gene,
      'associated_variant_risk_allele' => $associated_variant_risk_allele,
      'variation_names'       => $variation_names,
      'risk_allele_freq_in_controls'   => $risk_allele_freq_in_controls,
      'p_value'               => $p_value,
      'adaptor'  => $self,
+	   'study' => $study,
     });
   }
 

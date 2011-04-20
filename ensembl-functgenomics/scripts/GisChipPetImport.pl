@@ -1,21 +1,38 @@
-#!/software/bin/perl -w
+#!/usr/bin/env perl
+
+=head1 LICENSE
+
+  Copyright (c) 1999-2011 The European Bioinformatics Institute and
+  Genome Research Limited.  All rights reserved.
+
+  This software is distributed under a modified Apache license.
+  For license details, please see
+
+    http://www.ensembl.org/info/about/code_licence.html
+
+=head1 CONTACT
+
+  Please email comments or questions to the public Ensembl
+  developers list at <ensembl-dev@ebi.ac.uk>.
+
+  Questions may also be sent to the Ensembl help desk at
+  <helpdesk@ensembl.org>.
 
 =head1 CVS
 
   $Log: GisChipPetImport.pl,v $
+  Revision 1.3  2011-01-10 14:25:54  nj1
+  added generic #!/usr/bin/env perl
+
+  Revision 1.2  2011-01-10 13:40:37  nj1
+  updated boiler plate
+
   Revision 1.1  2008-07-01 13:39:43  dkeefe
   quick hack demonstrating the wrong way to add annotated features to
   the funcgen database.
 
-
-=head1 AUTHOR
-
-  Damian Keefe dkeefe@ebi.ac.uk
-
 =cut
 
-
-###!/opt/local/bin/perl -w
 
 BEGIN{
     if($ENV{SHELL} eq 'bash'){

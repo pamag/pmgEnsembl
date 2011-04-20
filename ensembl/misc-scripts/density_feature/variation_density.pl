@@ -38,23 +38,25 @@ my $variation_feature_adaptor = Bio::EnsEMBL::Registry->get_adaptor($species, "v
 # TODO - variation from registry
 
 # Clean up old features first. Also remove analysis and density type entry as these are recreated
-my $sth = $slice_adaptor->dbc->prepare("DELETE df, dt, a, ad FROM analysis_description ad, density_feature df, density_type dt, analysis a WHERE ad.analysis_id = a.analysis_id AND a.analysis_id=dt.analysis_id AND dt.density_type_id=df.density_type_id AND a.logic_name='snpDensity'");
+my $sth = $slice_adaptor->dbc->prepare("DELETE df, dt, a, ad FROM analysis_description ad, density_feature df, density_type dt, analysis a WHERE ad.analysis_id = a.analysis_id AND a.analysis_id=dt.analysis_id AND dt.density_type_id=df.density_type_id AND a.logic_name='snpdensity'");
 $sth->execute();
 
 # Sort slices by coordinate system rank, then by length
-my @sorted_slices =
-  sort( {      $a->coord_system()->rank() <=> $b->coord_system()->rank()
-	       || $b->seq_region_length() <=> $a->seq_region_length()
-	} @{ $slice_adaptor->fetch_all('toplevel') } );
+my @sorted_slices = sort( {
+               $a->coord_system()->rank() <=> $b->coord_system()->rank()
+                 || $b->seq_region_length() <=> $a->seq_region_length()
+} @{ $slice_adaptor->fetch_all('toplevel') } );
 
-my $analysis = new Bio::EnsEMBL::Analysis(-program       => "variation_density.pl",
-					  -database      => "ensembl",
-					  -gff_source    => "variation_density.pl",
-					  -gff_feature   => "density",
-					  -logic_name    => "snpDensity",
-					  -description   => 'Density of SNP features on the sequence',
-					  -display_label => 'SNP Density',
-					  -displayable   => 1 );
+my $analysis =
+  new Bio::EnsEMBL::Analysis(
+              -program     => "variation_density.pl",
+              -database    => "ensembl",
+              -gff_source  => "variation_density.pl",
+              -gff_feature => "density",
+              -logic_name  => "snpdensity",
+              -description => 'Density of Single Nucleotide Polymorphisms (SNPs) calculated by variation_density.pl (see scripts at the <a rel="external" href="http://cvs.sanger.ac.uk/cgi-bin/viewvc.cgi/?root=ensembl">Sanger Institute CVS</a> repository).',
+              -display_label => 'SNP Density',
+              -displayable   => 1 );
 
 $analysis_adaptor->store($analysis);
 $analysis_adaptor->update($analysis);

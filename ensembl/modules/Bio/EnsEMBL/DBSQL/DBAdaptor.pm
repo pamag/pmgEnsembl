@@ -1,6 +1,6 @@
 =head1 LICENSE
 
-  Copyright (c) 1999-2010 The European Bioinformatics Institute and
+  Copyright (c) 1999-2011 The European Bioinformatics Institute and
   Genome Research Limited.  All rights reserved.
 
   This software is distributed under a modified Apache license.
@@ -80,7 +80,7 @@ my $reg = "Bio::EnsEMBL::Registry";
                users, specially if you need to store and retrieve
                features.  It might reduce performance when querying
                the database if not used properly.  If in doubt, do
-               not use it or ask in ensembl-dev.
+               not use it or ask in the developer mailing list.
 
   Arg [..]   : Other args are passed to superclass
                Bio::EnsEMBL::DBSQL::DBConnection
@@ -141,7 +141,12 @@ sub new {
   if ( defined($species) ) { $self->species($species) }
   if ( defined($group) )   { $self->group($group) }
 
+ 
   $self = Bio::EnsEMBL::Utils::ConfigRegistry::gen_load($self);
+
+  if(!defined($species) ){
+     $reg->find_and_add_aliases($self);
+  }
 
   $self->species_id( $species_id || 1 );
 
@@ -305,7 +310,7 @@ sub get_available_adaptors {
         Gene                     KaryotypeBand        MiscSet
         MiscFeature              PredictionTranscript PredictionExon
         ProteinFeature           ProteinAlignFeature  RepeatConsensus
-        RepeatFeature            Sequence             SimpleFeature
+        RepeatFeature            Sequence             SeqRegionSynonym  SimpleFeature
         Slice                    SupportingFeature    Transcript
         TranscriptSupportingFeature Translation       UnmappedObject
         UnconventionalTranscriptAssociation           AssemblySlice
@@ -321,12 +326,6 @@ sub get_available_adaptors {
     'MetaCoordContainer' => 'Bio::EnsEMBL::DBSQL::MetaCoordContainer',
     'MetaContainer'      => 'Bio::EnsEMBL::DBSQL::MetaContainer',
     'SNP'                => 'Bio::EnsEMBL::DBSQL::ProxySNPAdaptor',
-    # Feature Collections:
-    'GeneCollection'       => 'Bio::EnsEMBL::Collection::Gene',
-    'TranscriptCollection' => 'Bio::EnsEMBL::Collection::Transcript',
-    'ExonCollection'       => 'Bio::EnsEMBL::Collection::Exon',
-    'RepeatFeatureCollection' =>
-      'Bio::EnsEMBL::Collection::RepeatFeature'
   );
 
   return ( \%pairs );

@@ -624,6 +624,7 @@
 		<xsl:for-each select="/*/updatable_annotation/annotation_set/features/gene/transcript">
 		  
 		  <xsl:if test="@fixed_id=$transname">
+		     
 		     <!--
 			<xsl:for-each select="@transcript_id">
 			   <xsl:if test="string-length(.) &gt; 0">
@@ -636,11 +637,27 @@
 			   </xsl:if>
 			</xsl:for-each>
 		-->
+		
+			<!-- Display the NCBI accession for the transcript -->
+			<xsl:if test="../../../source/name='NCBI RefSeqGene' and @fixed_id=$transname and string-length(comment) = 0">
+			   <strong>  Comment: </strong>This transcript is based on RefSeq transcript 
+			      <a>
+				 <xsl:attribute name="href">http://www.ncbi.nlm.nih.gov/nuccore/<xsl:value-of select="@transcript_id" /></xsl:attribute>
+				 <xsl:attribute name="target">_blank</xsl:attribute>
+				    <xsl:value-of select="@transcript_id" />
+			      </a> 
+			      <xsl:if test="protein_product/long_name">
+				  (encodes <xsl:value-of select="protein_product/long_name" />)
+			      </xsl:if>
+			   <br />
+			</xsl:if>
+			
 			<xsl:for-each select="comment">
 			   <xsl:if test="string-length(.) &gt; 0">
 			      <strong>  Comment: </strong><xsl:value-of select="."/>  (comment sourced from <xsl:value-of select="../../../../source/name" />)<br/>
 			   </xsl:if>
 			</xsl:for-each>
+			
 		  </xsl:if>
 		</xsl:for-each>
 	  </p>
@@ -1490,7 +1507,7 @@
 						  <tr><th>Transcript ID</th><th>Source</th><th>Start</th><th>End</th><th>External identifiers</th><th>Other</th></tr>
 						  <xsl:for-each select="transcript">
 						   <xsl:variable name="transcript_idx" select="position()"/>
-							<tr valign="top">
+						   <tr valign="top">
 							 <xsl:attribute name="class">trans_prot</xsl:attribute>
 							 <xsl:attribute name="id">up_trans_<xsl:value-of select="$setnum"/>_<xsl:value-of select="$gene_idx"/>_<xsl:value-of select="$transcript_idx"/></xsl:attribute>
 							 <xsl:attribute name="onClick">toggle_transcript_highlight(<xsl:value-of select="$setnum"/>,<xsl:value-of select="$gene_idx"/>,<xsl:value-of select="$transcript_idx"/>)</xsl:attribute>
@@ -1535,8 +1552,20 @@
 								  <strong>Name: </strong><xsl:value-of select="long_name"/><br/>
 								</xsl:if>
 								<xsl:for-each select="comment">
-								  <strong>Comment: </strong><xsl:value-of select="."/><br/>
+								  <xsl:if test="string-length(.) &gt; 0">
+								     <strong>Comment: </strong><xsl:value-of select="."/><br/>
+								  </xsl:if>
 								</xsl:for-each>
+							       <xsl:if test="(@fixed_id and @source='RefSeq')">
+								  <strong>Comment: </strong>This transcript was used for 
+								  <a>
+								     <xsl:attribute name="href">
+									#transcript_<xsl:value-of select="@fixed_id"/>
+								     </xsl:attribute>
+								     LRG transcript <xsl:value-of select="@fixed_id"/>
+								  </a>
+								  <br/>
+							       </xsl:if>
 								<xsl:if test="partial">
 								  <xsl:for-each select="partial">
 								     <strong>Note: </strong>
@@ -1548,8 +1577,10 @@
 							</tr>
 						  </xsl:for-each>
 						  
-						  <tr><th>Protein ID</th><th>Source</th><th>CDS start</th><th>CDS end</th><th>External identifiers</th><th>Other</th></tr>
-						  <xsl:for-each select="transcript">
+						  <xsl:choose>
+						  	<xsl:when test="transcript[protein_product]">
+							  <tr><th>Protein ID</th><th>Source</th><th>CDS start</th><th>CDS end</th><th>External identifiers</th><th>Other</th></tr>
+							  <xsl:for-each select="transcript">
 						      <xsl:variable name="transcript_idx" select="position()"/>
 							<xsl:for-each select="protein_product">
 							  <tr valign="top">
@@ -1600,7 +1631,7 @@
 									<xsl:variable name="part" select="." />
 									<strong>Note: </strong>
 									<xsl:choose>
-									   <xsl:when test="substring($part,0,1)='5'">
+									   <xsl:when test="substring($part,1,1)='5'">
 									      N-terminal
 									   </xsl:when>
 									   <xsl:otherwise>
@@ -1616,6 +1647,13 @@
 							</xsl:for-each> 
 						  </xsl:for-each>
 						  
+						  	</xsl:when>
+						  	<xsl:otherwise>
+						  		<xsl:if test="long_name and not(contains(long_name,'RNA)'))">
+						  			<tr><th colspan="6" style="text-align:center; ">No proteins identified for this gene in this source</th></tr>
+						  		</xsl:if>
+						  	</xsl:otherwise>
+						  </xsl:choose>
 						  <tr><td colspan="6" style="border:0px;"> </td></tr>
 						</table>
 					  </xsl:when>

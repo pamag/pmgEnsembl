@@ -64,14 +64,14 @@ if( ! $repeat_count ) {
 #
 
 print "Deleting old PercentageRepeat features\n";
-$sth = $db->dbc->prepare("DELETE df, dt, a, ad FROM analysis_description ad, density_feature df, density_type dt, analysis a WHERE ad.analysis_id = a.analysis_id AND a.analysis_id=dt.analysis_id AND dt.density_type_id=df.density_type_id AND a.logic_name='PercentageRepeat'");
+$sth = $db->dbc->prepare("DELETE df, dt, a, ad FROM analysis_description ad, density_feature df, density_type dt, analysis a WHERE ad.analysis_id = a.analysis_id AND a.analysis_id=dt.analysis_id AND dt.density_type_id=df.density_type_id AND a.logic_name='rercentagerepeat'");
 $sth->execute();
 
 # $sth = $db->dbc()->prepare(
 #   qq(
 #   DELETE ad
 #   FROM analysis_description ad
-#   WHERE ad.display_label = 'PercentageRepeat') );
+#   WHERE ad.display_label = 'percentagerepeat') );
 # $sth->execute();
 
 my $slice_adaptor = $db->get_SliceAdaptor();
@@ -87,15 +87,15 @@ my $aa  = $db->get_AnalysisAdaptor();
 
 my $analysis =
   new Bio::EnsEMBL::Analysis(
-       -program     => "repeat_coverage_calc.pl",
-       -database    => "ensembl",
-       -gff_source  => "repeat_coverage_calc.pl",
-       -gff_feature => "density",
-       -logic_name  => "PercentageRepeat",
-       -description =>
-         'Percentage of repetetive elements for top level seq_regions.',
-       -display_label => 'Repeats (percent)',
-       -displayable   => 1 );
+  -program     => "repeat_coverage_calc.pl",
+  -database    => "ensembl",
+  -gff_source  => "repeat_coverage_calc.pl",
+  -gff_feature => "density",
+  -logic_name  => "percentagerepeat",
+  -description =>
+'Percentage of repetitive elements for top level sequences (such as chromosomes, scaffolds, etc.)',
+  -display_label => 'Repeats (percent)',
+  -displayable   => 1 );
 
 $aa->store($analysis);
 $aa->update($analysis);

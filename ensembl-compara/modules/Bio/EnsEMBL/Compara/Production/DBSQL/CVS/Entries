@@ -1,8 +1,8 @@
-/AnchorAlignAdaptor.pm/1.5/Wed Jun  2 13:32:56 2010//Tbranch-ensembl-60
-/AnchorSeqAdaptor.pm/1.3/Fri Oct 16 13:36:59 2009//Tbranch-ensembl-60
-/DBAdaptor.pm/1.4/Tue Mar 31 15:15:30 2009//Tbranch-ensembl-60
-/DnaCollectionAdaptor.pm/1.2/Fri Feb 25 12:43:37 2005//Tbranch-ensembl-60
-/DnaFragChunkAdaptor.pm/1.14/Tue Jul  7 14:42:31 2009//Tbranch-ensembl-60
-/DnaFragChunkSetAdaptor.pm/1.4/Fri Feb  4 17:20:51 2005//Tbranch-ensembl-60
-/README/1.1/Mon Sep 27 12:04:34 2004//Tbranch-ensembl-60
+/AnchorAlignAdaptor.pm/1.7/Thu Mar 31 13:24:19 2011//Tbranch-ensembl-62
+/AnchorSeqAdaptor.pm/1.3/Fri Oct 16 13:36:59 2009//Tbranch-ensembl-62
+/DBAdaptor.pm/1.4/Tue Mar 31 15:15:30 2009//Tbranch-ensembl-62
+/DnaCollectionAdaptor.pm/1.2/Fri Feb 25 12:43:37 2005//Tbranch-ensembl-62
+/DnaFragChunkAdaptor.pm/1.14/Tue Jul  7 14:42:31 2009//Tbranch-ensembl-62
+/DnaFragChunkSetAdaptor.pm/1.4/Fri Feb  4 17:20:51 2005//Tbranch-ensembl-62
+/README/1.1/Mon Sep 27 12:04:34 2004//Tbranch-ensembl-62
 D

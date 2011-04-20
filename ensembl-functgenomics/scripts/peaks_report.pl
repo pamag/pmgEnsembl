@@ -1,4 +1,22 @@
-#!/usr/local/bin/perl
+#!/usr/bin/env perl
+
+=head1 LICENSE
+
+  Copyright (c) 1999-2011 The European Bioinformatics Institute and
+  Genome Research Limited.  All rights reserved.
+
+  This software is distributed under a modified Apache license.
+  For license details, please see
+
+    http://www.ensembl.org/info/about/code_licence.html
+
+=head1 CONTACT
+
+  Please email comments or questions to the public Ensembl
+  developers list at <ensembl-dev@ebi.ac.uk>.
+
+  Questions may also be sent to the Ensembl help desk at
+  <helpdesk@ensembl.org>.
 
 =head1 NAME
 
@@ -102,34 +120,26 @@ Processes all available seq_regions, by default only uses chromosomes.
 
 Name for this report, default is 'peaks_report'
 
+=item B<-inset_main>
+
+Space given for the legend for chromosomes/regions. Default is 0.1 (works well for ~20 chromosomes)
+Depends on number of regions.
+
+=item B<-inset_compare>
+
+Space given for the legend for comparing cell types. Default is 0.5 (works for ~10 cell-types)
+Depends on number of cell types.
+
+=item B<-outdir>
+
+Base folder for output. Defaults to $EFG_DATA
+
 =back
 
 
 =head1 SEE ALSO
 
 ensembl-functgenomics/scripts/environments/peaks.env PeaksReport function
-
-
-=head1 LICENSE
-
-  Copyright (c) 1999-2010 The European Bioinformatics Institute and
-  Genome Research Limited.  All rights reserved.
-
-  This software is distributed under a modified Apache license.
-  For license details, please see
-
-    http://www.ensembl.org/info/about/code_licence.html
-
-
-=head1 CONTACT
-
-  Please email comments or questions to the public Ensembl
-  developers list at <ensembl-dev@ebi.ac.uk>.
-
-  Questions may also be sent to the Ensembl help desk at
-  <helpdesk@ensembl.org>.
-
-
 
 =cut
 
@@ -161,9 +171,7 @@ use Getopt::Long;
 use Pod::Usage;
 use Bio::EnsEMBL::DBSQL::DBAdaptor;
 use Bio::EnsEMBL::Funcgen::DBSQL::DBAdaptor;
-use Data::Dumper;
-
-my ($species, $help, $R, $nodump, $compare, $regstats, $all_seq_regions, $no_outliers);
+use Cwd;
 
 
 my %feature_tables = (
@@ -172,8 +180,8 @@ my %feature_tables = (
 					  #external   => 1,
 					 );
 
-#my $feature_table='annotated';
-my $name = 'peaks_report_'.$$;#Add PID to avoid overwriting previous reports
+
+#Best not use these as default as they are easily forgotten
 #my $host = $ENV{DB_HOST};
 #my $port = $ENV{DB_PORT};
 #my $user = $ENV{DB_READ_USER};
@@ -184,7 +192,17 @@ my $name = 'peaks_report_'.$$;#Add PID to avoid overwriting previous reports
 #my $dnadbuser = $ENV{DNADB_USER};
 #my $dnadbname =  $ENV{DNADB_NAME};
 #my $dnadbpass =  $ENV{DNADB_PASS};
+
+my ($species, $help, $R, $nodump, $compare, $regstats, $all_seq_regions, $no_outliers, $name, $outdir);
 my ($feature_table, $host, $port, $user, $pass, $dbname, $dnadbhost, $dnadbport, $dnadbuser, $dnadbname, $dnadbpass);
+my ($inset_main, $inset_compare);
+
+#Default values
+$inset_main=0.1;
+$inset_compare=0.5;
+$user = 'ensro';
+$name = 'peaks_report_'.$$;#Add PID to avoid overwriting previous reports
+$outdir = $ENV{'EFG_DATA'};
 
 #get command line options
 
@@ -204,35 +222,56 @@ GetOptions (
 			'dbport=i'           => \$port,
 			'dbpass=s'           => \$pass,
 			'dbname=s'           => \$dbname,
+			'outdir=s'           => \$outdir,
 			"help|h"             => \$help,
 			"R"                  => \$R,
 			"nodump"             => \$nodump,
-	                "no_outliers"        => \$no_outliers,
+			"no_outliers"        => \$no_outliers,
 			"compare"            => \$compare,
 			"regstats"           => \$regstats,
 			"all_seq_regions"    => \$all_seq_regions,
 			"feature_sets=s{,}"  => \@fset_names,
 	                "feature_table=s",   => \$feature_table,
+	                "inset_main=s",      => \$inset_main,
+	                "inset_compare=s",   => \$inset_compare,
 			"name=s"             => \$name,
 		   )  or pod2usage( -exitval => 1 ); #Catch unknown opts
 
 pod2usage(1) if ($help);
 
+#Reset to undef so we don't try with empty string
+#$pass      ||= undef;
+#$dnadbpass ||= undef;
 
 # Sould be failing a little nicer now... 
-if(!$feature_table) { print "Missing Type of Feature: annotated or regulatory\n"; exit 0; }
-if(!$host || !$port || !$user || !$dbname || !$feature_table) {  print "Missing connection parameters\n"; exit 0; }
+if(!$feature_table) { print "Missing Type of Feature: annotated or regulatory (use -h for help)\n"; exit 0; }
+if(!$host || !$port || !$user || !$dbname )  {  print "Missing connection parameters (use -h for help)\n"; exit 0; }
+if(!$outdir )  {  print "\$EFG_DATA not defined and -outdir not specified\n"; exit 0; }
 
 if(! $feature_tables{$feature_table}){
   die("You have specified an invalid -feature_table. Must be one of:\t".join("\t", (keys %feature_tables)));
 }
 
+if(! -d $outdir){
+  die("Error: $outdir is not a valid output folder");
+} else{
+  
+  $outdir .= '/output/'.$dbname.'/regulatory_features';
+  print "Setting default output directory to:\t".$outdir;
+  
+  if(! -d $outdir){
+    system("mkdir -p $outdir") == 0 or 
+      die("Could not create output directory:\t".$outdir);
+  }
+}
+
+#warn "dbpass is x${pass}x";
+#warn "dnadbpass is x${dnadbpass}";
+
 #Check database connections
-my $coredba;
+my ($coredba, $efgdba);
 if($dnadbname){
   
-  my $dnadbpass = {-pass => $dnadbpass};
-	  
   my $coredba = Bio::EnsEMBL::DBSQL::DBAdaptor->new
     (
      -host => $dnadbhost,
@@ -241,30 +280,22 @@ if($dnadbname){
      -dbname => $dnadbname,
      -species => $species,
      -group   => 'core',
-     %$dnadbpass
+     -pass    => $dnadbpass,
     );
 }
 
-my ($efgdba, $apass);
-if($dbname){
+ 
+$efgdba = Bio::EnsEMBL::Funcgen::DBSQL::DBAdaptor->new
+  (
+   -host    => $host,
+   -port    => $port,
+   -user    => $user,
+   -dbname  => $dbname,
+   -species => $species, #Not strictly necessary
+   -dnadb   => $coredba, 
+   -pass    => $pass,
+  );
 
-  if ($pass){
-	$apass = {-pass => $pass};
-	$pass = "-p $pass";
-  }
-
-
-  $efgdba = Bio::EnsEMBL::Funcgen::DBSQL::DBAdaptor->new
-    (
-     -host    => $host,
-     -port    => $port,
-     -user    => $user,
-     -dbname  => $dbname,
-     -species => $species,
-     -dnadb   => $coredba, #Assumes that new will accept undef as parameter for this...
-     %$apass
-    );
-}
 
 #Test connections
 $efgdba->dbc->db_handle;
@@ -273,12 +304,7 @@ $efgdba->dnadb->dbc->db_handle;
 my $fsa = $efgdba->get_FeatureSetAdaptor();
 
 if(scalar(@fset_names)==0){
-   # @fset_names = "all feature sets"
-   #this returns the result of a generic query, which is a list inside a list... so the actual list is in [0]
-   #TODO -> CHANGE THE API code?
-   #TODO pass type as parameter??
-   my @fsets = $fsa->fetch_all_by_type($feature_table);
-   foreach my $fset (@{$fsets[0]}){ push(@fset_names, $fset->name);  } 
+  map { push @fset_names, $_->name } @{$fsa->fetch_all_by_type($feature_table)};
 }
 else{#Validate fset names
   
@@ -305,7 +331,7 @@ my %sr_type_clauses = (
 		      );
 
 if(!$nodump){
-  print "::Dumping Datasets\n";
+  print "\n\n::Dumping Datasets\n";
   
   #This was not accounting for nr sr_ids
   foreach my $sr_type(@sr_types){
@@ -313,38 +339,39 @@ if(!$nodump){
     #Save to only one file... though it may be big...
     my $query ="SELECT fs.name as 'name', s.name as 'region', (f.seq_region_end - f.seq_region_start) as 'length' FROM ${feature_table}_feature f, (select distinct(seq_region_id), sr.name from seq_region sr, coord_system cs where sr.coord_system_id=cs.coord_system_id and cs.name".$sr_type_clauses{$sr_type}." and cs.is_current is TRUE) s, feature_set fs WHERE f.feature_set_id=fs.feature_set_id AND f.seq_region_id=s.seq_region_id AND fs.name IN ('".join("','",@fset_names)."');";
     
-    my $cmd = "mysql -e \"".$query."\" -quick -h$host -P$port -u$user ".(($pass)? "$pass" : "")." $dbname >${name}.data.${sr_type}.txt";
+    my $cmd = "mysql -e \"".$query."\" -quick -h$host -P$port -u$user ".(($pass)? "$pass" : "")." $dbname >${outdir}/${name}.data.${sr_type}.txt";
     print $cmd."\n";
     system($cmd);
   }
   
   if($regstats){
     my $query = "SELECT * from rf_stats";
-    system("mysql -e \"".$query."\" -quick -h$host -P$port -u$user ".(($pass)? "-p$pass" : "")." $dbname > regstats.txt");
+    system("mysql -e \"".$query."\" -quick -h$host -P$port -u$user ".(($pass)? "-p$pass" : "")." $dbname > ${outdir}/regstats.txt");
   }
 
 }
 
+my $dir = getcwd;
 #print R file with analysis
 #Check which parameters one might want...
 if (defined $R) {
   
   print "::Generating the R plots\n";
-  open(FO,">${name}.R");
+  open(FO,">${outdir}/${name}.R");
   print FO "require(graphics)\n";
-  print FO "pdf(file=\"${name}.pdf\")\n";
+  print FO "pdf(file=\"${outdir}/${name}.pdf\")\n";
   print FO "par(cex=0.7,cex.main=1)\n";
   
   if($regstats){ 
      print FO "require(gplots);\n";
-     print FO "regstats <- read.table(\"regstats.txt\",row.names=1,header=TRUE);\n"; 
+     print FO "regstats <- read.table(\"${outdir}/regstats.txt\",row.names=1,header=TRUE);\n"; 
      print FO "textplot(regstats,halign=\"left\")\n";
   }
   
   foreach my $sr_type(@sr_types){
     
     #Load the data
-    print FO "data_${sr_type} <- read.table(\"${name}.data.${sr_type}.txt\",header=TRUE,sep=\"\\t\")\n";
+    print FO "data_${sr_type} <- read.table(\"${outdir}/${name}.data.${sr_type}.txt\",header=TRUE,sep=\"\\t\")\n";
     
     #Give a little space for the legend... outside the graph... (test how much space... and the size of text in lengend)
     print FO "par(xpd=T, mar=par()\$mar+c(0,0,0,5))\n";
@@ -353,11 +380,11 @@ if (defined $R) {
     print FO "for (subset in split(data_${sr_type},data_${sr_type}\$name)){\n";
     print FO "    subdata <- lapply(split(subset, subset\$region),function(x) x\$length)\n";
     print FO "    barplot(sapply(subdata, function(x) length(x)), main=subset\$name[1], xlab=\"region\",ylab=\"Number of Peaks\", col=rainbow(length(subdata)))\n";
-    print FO "    legend('topright', inset=c(-0.1,0), legend=levels(subset\$region),fill=rainbow(length(subdata)), cex=0.8)\n";
+    print FO "    legend('topright', inset=c(-".$inset_main.",0), legend=levels(subset\$region),fill=rainbow(length(subdata)), cex=0.8)\n";
     print FO "    boxplot(subdata,main=subset\$name[1],xlab='region',ylab='Peak length', col=rainbow(length(subdata))";
     if($no_outliers){ print FO ",outline=FALSE"; }
     print FO ")\n"; 
-    print FO "    legend('topright',inset=c(-0.1,0),legend=levels(subset\$region), fill=rainbow(length(subdata)), cex=0.8)\n";    
+    print FO "    legend('topright',inset=c(-".$inset_main.",0),legend=levels(subset\$region), fill=rainbow(length(subdata)), cex=0.8)\n";    
     print FO "}\n";
 
   }
@@ -370,25 +397,25 @@ if (defined $R) {
     #Global overview comparison
     print FO "data_region <-lapply(split(data_chromosome, data_chromosome\$name), function(x) x\$length)\n";
     print FO "barplot(sapply(data_region, function(x) length(x)),main='Number of Peaks per Set', xlab='Set',ylab='Number of Peaks', col=rainbow(length(data_region)), xaxt='n')\n";
-    print FO "legend('topright', inset=c(-1,0),legend=levels(data_chromosome\$name),fill=rainbow(length(data_region)), cex=0.8)\n";  
+    print FO "legend('topright', inset=c(-".$inset_compare.",0),legend=levels(data_chromosome\$name),fill=rainbow(length(data_region)), cex=0.8)\n";  
     #print FO "axis(1, labels=FALSE, at=1:length(data_region), tick=TRUE)\n";
     print FO "boxplot(data_region,main='Peak Length per Dataset',xlab=\"Set\",ylab=\"Peaks Length\", col=rainbow(length(data_region)), xaxt='n'";
     if($no_outliers){ print FO ",outline=FALSE"; }
     print FO ")\n";
-    print FO "legend('topright',inset=c(-1,0),legend=levels(data_chromosome\$name),fill=rainbow(length(data_region)), cex=0.8)\n";    
+    print FO "legend('topright',inset=c(-".$inset_compare.",0),legend=levels(data_chromosome\$name),fill=rainbow(length(data_region)), cex=0.8)\n";    
     print FO "axis(1, labels=FALSE, at=1:length(data_region), tick=TRUE)\n";
 
     #Print Comparative graphs by Region
     print FO "for (subset in split(data_chromosome,data_chromosome\$region)){\n";
     print FO "    subdata <- lapply(split(subset, subset\$name),function(x) x\$length)\n";
     print FO "    barplot(unlist(lapply(subdata, function(x) length(x))), main=subset\$region[1], xlab=\"region\",ylab=\"Number of Peaks\", col=rainbow(length(subdata)), xaxt='n')\n";
-    print FO "    legend('topright',inset=c(-1,0),legend=levels(subset\$name),fill=rainbow(length(subdata)), cex=0.8)\n";
+    print FO "    legend('topright',inset=c(-".$inset_compare.",0),legend=levels(subset\$name),fill=rainbow(length(subdata)), cex=0.8)\n";
     #print FO "    axis(1, labels=FALSE, at=1:length(subdata), tick=TRUE)\n";
 
     print FO "    boxplot(subdata,main=subset\$region[1],xlab='Set',ylab='Peak length', col=rainbow(length(subdata)), xaxt='n'";
     if($no_outliers){ print FO ",outline=FALSE"; }
     print FO ")\n"; 
-    print FO "    legend('topright',inset=c(-1,0),legend=levels(subset\$name),fill=rainbow(length(subdata)), cex=0.8)\n";    
+    print FO "    legend('topright',inset=c(-".$inset_compare.",0),legend=levels(subset\$name),fill=rainbow(length(subdata)), cex=0.8)\n";    
     print FO "    axis(1, labels=FALSE, at=1:length(subdata), tick=TRUE)\n";
     print FO "}\n";
     
@@ -396,9 +423,12 @@ if (defined $R) {
     
    
   close FO;
+  chdir($outdir);
   #This submits to the yesterday queue by default
   system "R CMD BATCH --slave ${name}.R";
 }
+
+chdir($dir);
 
 __END__
 

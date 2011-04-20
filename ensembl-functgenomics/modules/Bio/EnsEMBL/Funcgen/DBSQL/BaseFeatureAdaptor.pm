@@ -1,14 +1,31 @@
 #
 # EnsEMBL module for Bio::EnsEMBL::Funcgen::DBSQL::BaseFeatureAdaptor
 #
-# Copyright (c) 2006 Ensembl
-#
-# You may distribute this module under the same terms as perl itself
+
+
+=head1 LICENSE
+
+  Copyright (c) 1999-2011 The European Bioinformatics Institute and
+  Genome Research Limited.  All rights reserved.
+
+  This software is distributed under a modified Apache license.
+  For license details, please see
+
+    http://www.ensembl.org/info/about/code_licence.html
+
+=head1 CONTACT
+
+  Please email comments or questions to the public Ensembl
+  developers list at <ensembl-dev@ebi.ac.uk>.
+
+  Questions may also be sent to the Ensembl help desk at
+  <helpdesk@ensembl.org>.
+
 
 =head1 NAME
 
-Bio::EnsEMBL::Funcgen::DBSQL::BaseFeatureAdaptor - An Base class for all
-Funcgen FeatureAdaptors, redefines some methods to use the Funcgen DB
+Bio::EnsEMBL::Funcgen::DBSQL::BaseFeatureAdaptor - A Base class for all
+Funcgen FeatureAdaptors
 
 =head1 SYNOPSIS
 
@@ -18,14 +35,7 @@ abstract methods must be performed by subclasses.
 =head1 DESCRIPTION
 
 This is a base adaptor for Funcgen feature adaptors. This base class is simply a way
-of eliminating code duplication through the implementation of methods
-common to all Funcgen feature adaptors.
-
-=head1 CONTACT
-
-Contact Ensembl development list for info: <ensembl-dev@ebi.ac.uk>
-
-=head1 METHODS
+to redefine some methods to use with the Funcgen DB. 
 
 =cut
 
@@ -207,6 +217,7 @@ sub fetch_all_by_Slice_constraint {
   
   # fetch features for the primary slice AND all symlinked slices
   foreach my $seg (@proj) {
+
     my $offset = $seg->from_start();
     my $seg_slice  = $seg->to_Slice();
     my $features = $self->_slice_fetch($seg_slice, $constraint); ## NO RESULTS? This is a problem with the cs->equals method?
@@ -436,14 +447,15 @@ sub get_seq_region_id_by_Slice{
 		my $schema_build = $self->db->_get_schema_build($slice->adaptor->db());
 		my $core_cs = $slice->coord_system;
 	
-		#This is basically avoiding the mapping of core to efg seq_region_ids 
+		#Avoids mapping of core to efg seq_region_ids 
 		#via schema_build(of the new core db) as we are matching directly to the seq_name
 	
 		my $sql = 'select distinct(seq_region_id) from seq_region sr, coord_system cs where sr.coord_system_id=cs.coord_system_id and sr.name=? and cs.name =?';
 		my @args = ($slice->seq_region_name(), $core_cs->name());
-		if($core_cs->is_top_level()) {
-			$sql.= ' and cs.version =?';
-			push(@args, $core_cs->version());
+
+		if($core_cs->version()) {
+		  $sql.= ' and cs.version =?';
+		  push(@args, $core_cs->version());
 		}
 		if($self->is_multispecies()) {
 			$sql.=' and cs.species_id=?';
@@ -456,8 +468,9 @@ sub get_seq_region_id_by_Slice{
 		$sth->finish();
 	
 		if(! $fg_sr_id){
-		  throw('Cannot find previously stored seq_region for: '.$core_cs->name.':'.$core_cs->version.':'.$slice->seq_region_name.
-				"\nYou need to update your eFG seq_regions to match your core DB using: update_DB_for_release.pl\n");
+		  #Warn instead of throw so we can catch absent seq_region without eval
+		  warn('Cannot find previously stored seq_region for: '.$core_cs->name.':'.$core_cs->version.':'.$slice->seq_region_name.
+			   "\nYou need to update your eFG seq_regions to match your core DB using: update_DB_for_release.pl\n");
 		}
 	
 		#Only warn first time this is seen
@@ -713,6 +726,7 @@ sub _slice_fetch {
   my $slice = shift;
   my $orig_constraint = shift;
 
+
   my $slice_start  = $slice->start();
   my $slice_end    = $slice->end();
   my $slice_strand = $slice->strand();
@@ -762,6 +776,7 @@ sub _slice_fetch {
   my $asma = $self->db->get_AssemblyMapperAdaptor();
   my @features;
 
+
   # fetch the features from each coordinate system they are stored in
  COORD_SYSTEM: foreach my $feat_cs (@feat_css) {
 
@@ -783,12 +798,13 @@ sub _slice_fetch {
 	  #This test will effect ever single feature query, can we omit this somehow?
 	  my $max_len;
 
+
 	  if(! (($self->can('_window_size') &&
 			 $self->_window_size))){
 		  $max_len = $self->_max_feature_length() ||
         $mcc->fetch_max_length_by_CoordSystem_feature_type($feat_cs,$tab_name);
 	  }
-
+	
       my $constraint = $orig_constraint;
 	  my $sr_id = $self->get_seq_region_id_by_Slice($slice, $feat_cs);
 
@@ -811,10 +827,7 @@ sub _slice_fetch {
           " AND ${tab_syn}.seq_region_start >= $min_start";
       }
 
-
       my $fs = $self->generic_fetch($constraint,undef,$slice);
-
-	  
       # features may still have to have coordinates made relative to slice
       # start
 
@@ -1218,7 +1231,7 @@ sub _get_coord_system_ids{
 	   (scalar(@$coord_systems) >0)){
 	  
 	  foreach my $cs(@$coord_systems){
-		$self->is_stored_and_valid('Bio::EnsEMBL::Funcgen::CoordSystem', $cs);
+		$self->db->is_stored_and_valid('Bio::EnsEMBL::Funcgen::CoordSystem', $cs);
 		push @cs_ids, $cs->dbID;
 	  }
 	}

@@ -1,7 +1,25 @@
 #
 # Ensembl module for Bio::EnsEMBL::Funcgen::FeatureSet
 #
-# You may distribute this module under the same terms as Perl itself
+
+=head1 LICENSE
+
+  Copyright (c) 1999-2011 The European Bioinformatics Institute and
+  Genome Research Limited.  All rights reserved.
+
+  This software is distributed under a modified Apache license.
+  For license details, please see
+
+    http://www.ensembl.org/info/about/code_licence.html
+
+=head1 CONTACT
+
+  Please email comments or questions to the public Ensembl
+  developers list at <ensembl-dev@ebi.ac.uk>.
+
+  Questions may also be sent to the Ensembl help desk at
+  <helpdesk@ensembl.org>.
+
 
 =head1 NAME
 
@@ -23,19 +41,6 @@ my $result_set = Bio::EnsEMBL::Funcgen::FeatureSet->new(
 A FeatureSet object provides access to a set of feature predictions and their details, which may have been generated from a 
 single or multiple Experiments with potentially differing analyses.  The FeatureSet itself will only have a single analysis 
 which may be one or a combination of programs but will be represented by one analysis record.
-
-
-=head1 AUTHOR
-
-This module was created by Nathan Johnson.
-
-This module is part of the Ensembl project: http://www.ensembl.org/
-
-=head1 CONTACT
-
-Post comments or questions to the Ensembl development list: ensembl-dev@ebi.ac.uk
-
-=head1 METHODS
 
 =cut
 
@@ -284,8 +289,7 @@ sub get_Features_by_FeatureType{
 
 =head2 get_all_Features
 
-  Arg[0]     : Bio::EnsEMBL::Funcgen::FeatureType
-  Example    : my @features = @{$FeatureSet->get_all_Features_by_FeatureType($ftype)};
+  Example    : my @features = @{$FeatureSet->get_all_Features};
   Description: Retrieves all Features for this FeatureSet
   Returntype : ARRAYREF
   Exceptions : None
@@ -333,6 +337,34 @@ sub is_focus_set{
   return $self->{focus_set};
 }
 
+=head2 is_attribute_set
+
+  Args       : None
+  Example    : if($fset->is_attribute_set){ ... }
+  Description: Returns true if FeatureSet is a supporting/attribute(focus or not) set used in the RegulatoryBuild
+  Returntype : Boolean
+  Exceptions : Throws if meta entry not present
+  Caller     : General
+  Status     : At Risk
+
+=cut
+
+sub is_attribute_set{
+  my $self = shift;
+
+  if(! defined $self->{attribute_set}){
+
+	if(! defined $self->cell_type){
+	  warn "FeatureSet without an associated CellType cannot be a attribute set:\t".$self->name;
+	  $self->{attribute_set} = 0;
+	}
+	else{
+	   $self->{attribute_set} = $self->adaptor->fetch_attribute_set_config_by_FeatureSet($self);
+	 }
+  }
+
+  return $self->{attribute_set};
+}
 
 #No data_set method here as FeatureSet can be product or supporting set in data_set
 #Use DataSetAdaptor::fetch_by_product_FeatureSet or fetch_all_by_supporting_set

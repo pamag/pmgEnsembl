@@ -7,13 +7,15 @@
 
 =head1 SYNOPSIS
 
-    init_pipeline.pl Bio::EnsEMBL::Compara::PipeConfig::DumpTrees_conf -password <your_password> -tree_type gene_trees
+    init_pipeline.pl Bio::EnsEMBL::Compara::PipeConfig::DumpTrees_conf -password <your_password> -tree_type protein_trees
 
     init_pipeline.pl Bio::EnsEMBL::Compara::PipeConfig::DumpTrees_conf -password <your_password> -tree_type ncrna_trees
 
 =head1 DESCRIPTION  
 
-    A pipeline to dump either gene_trees or ncrna_trees
+    A pipeline to dump either protein_trees or ncrna_trees.
+
+    In rel.60 protein_trees took 2h20m to dump.
 
 =head1 CONTACT
 
@@ -39,10 +41,12 @@ sub default_options {
     return {
         'ensembl_cvs_root_dir' => $ENV{'HOME'}.'/work',                 # some Compara developers might prefer $ENV{'HOME'}.'/ensembl_main'
 
-        'rel'         => 59,                                                  # current release number
-        'tree_type'   => 'gene_trees',                                        # currently this is the only option, but it may become a proper parameter once 'ncrna_trees' are also supported
+        'rel'               => 61,                                                  # current release number
+        'rel_suffix'        => '',                                                  # empty string by default
+        'rel_with_suffix'   => $self->o('rel').$self->o('rel_suffix'),              # for convenience
+        'tree_type'         => 'protein_trees',                                     # either 'protein_trees' or 'ncrna_trees'
 
-        'pipeline_name' => $self->o('tree_type').'_'.$self->o('rel').'_dumps', # name used by the beekeeper to prefix job names on the farm
+        'pipeline_name' => $self->o('tree_type').'_'.$self->o('rel_with_suffix').'_dumps', # name used by the beekeeper to prefix job names on the farm
 
         'pipeline_db' => {
             -host   => 'compara2',
@@ -62,8 +66,9 @@ sub default_options {
 
         'capacity'    => 100,                                                       # how many trees can be dumped in parallel
         'batch_size'  => 25,                                                        # how may trees' dumping jobs can be batched together
-        'name_root'   => 'Compara.'.$self->o('rel').'.'.$self->o('tree_type'),      # dump file name root
+        'name_root'   => 'Compara.'.$self->o('rel_with_suffix').'.'.$self->o('tree_type'),      # dump file name root
         'dump_script' => $self->o('ensembl_cvs_root_dir').'/ensembl-compara/scripts/dumps/dumpTreeMSA_id.pl',
+        'readme_dir'  => $self->o('ensembl_cvs_root_dir').'/ensembl-compara/docs',
         'target_dir'  => '/lustre/scratch101/ensembl/'.$ENV{'USER'}.'/'.$self->o('pipeline_name'),   # where the final dumps will be stored
         'work_dir'    => $self->o('target_dir').'/dump_hash',                       # where directory hash is created and maintained
     };
@@ -105,6 +110,8 @@ sub pipeline_create_commands {
 
                     * 'md5sum'              compute md5sum for compressed files
 
+                    * 'copy_readme'         copy a correct README file into the target directory
+
 =cut
 
 sub pipeline_analyses {
@@ -114,9 +121,9 @@ sub pipeline_analyses {
             -module     => 'Bio::EnsEMBL::Hive::RunnableDB::JobFactory',
             -parameters => {
                 'db_conn'               => $self->o('rel_db'),
-                'gene_trees_query'      => "SELECT DISTINCT ptm.root_id FROM protein_tree_member ptm, protein_tree_tag ptt WHERE ptt.node_id=ptm.root_id AND ptt.tag='gene_count' AND ptt.value>1",
+                'protein_trees_query'      => "SELECT DISTINCT ptm.root_id FROM protein_tree_member ptm, protein_tree_tag ptt WHERE ptt.node_id=ptm.root_id AND ptt.tag='gene_count' AND ptt.value>1",
                 'ncrna_trees_query'     => "SELECT root_id FROM nc_tree_member ntm, nc_tree_tag ntt WHERE ntm.root_id=ntt.node_id AND ntt.tag='gene_count' AND ntt.value GROUP BY root_id HAVING sum(length(cigar_line))",
-                'inputquery'            => '#expr(($tree_type eq "gene_trees") ? $gene_trees_query : $ncrna_trees_query)expr#',
+                'inputquery'            => '#expr(($tree_type eq "protein_trees") ? $protein_trees_query : $ncrna_trees_query)expr#',
                 'hashed_column_number'  => 0,
                 'input_id'              => { 'tree_type' => '#tree_type#', 'tree_id' => '#_start_0#', 'hash_dir' => '#_start_1#' },
                 'fan_branch_code'       => 2,
@@ -133,12 +140,12 @@ sub pipeline_analyses {
         {   -logic_name    => 'dump_a_tree',
             -module        => 'Bio::EnsEMBL::Hive::RunnableDB::SystemCmd',
             -parameters    => {
-                'db_url'            => $self->dbconn_2_url('rel_db'),
-                'dump_script'       => $self->o('dump_script'),
-                'work_dir'          => $self->o('work_dir'),
-                'gene_trees_args'   => '-nh 1 -a 1 -nhx 1 -f 1 -fc 1 -nc 0',
-                'ncrna_trees_args'  => '-nh 1 -a 1 -nhx 1 -f 1 -nc 1',
-                'cmd'         => '#dump_script# --url #db_url# --dirpath #work_dir#/#hash_dir# --tree_id #tree_id# #expr(($tree_type eq "gene_trees") ? $gene_trees_args : $ncrna_trees_args)expr#',
+                'db_url'             => $self->dbconn_2_url('rel_db'),
+                'dump_script'        => $self->o('dump_script'),
+                'work_dir'           => $self->o('work_dir'),
+                'protein_trees_args' => '-nh 1 -a 1 -nhx 1 -f 1 -fc 1 -nc 0',
+                'ncrna_trees_args'   => '-nh 1 -a 1 -nhx 1 -f 1 -nc 1',
+                'cmd'         => '#dump_script# --url #db_url# --dirpath #work_dir#/#hash_dir# --tree_id #tree_id# #expr(($tree_type eq "protein_trees") ? $protein_trees_args : $ncrna_trees_args)expr#',
             },
             -hive_capacity => $self->o('capacity'),       # allow several workers to perform identical tasks in parallel
             -batch_size    => $self->o('batch_size'),
@@ -147,12 +154,12 @@ sub pipeline_analyses {
         {   -logic_name => 'generate_collations',
             -module     => 'Bio::EnsEMBL::Hive::RunnableDB::JobFactory',
             -parameters => {
-                'name_root'        => $self->o('name_root'),
-                'gene_trees_list'  => [ 'aln.emf', 'nh.emf', 'nhx.emf', 'aa.fasta', 'cds.fasta' ],
-                'ncrna_trees_list' => [ 'aln.emf', 'nh.emf', 'nhx.emf', 'aa.fasta' ],
-                'inputlist'        => '#expr(($tree_type eq "gene_trees") ? $gene_trees_list : $ncrna_trees_list)expr#',
-                'input_id'         => { 'tree_type' => '#tree_type#', 'extension' => '#_range_start#', 'dump_file_name' => '#name_root#.#_range_start#'},
-                'fan_branch_code'  => 2,
+                'name_root'          => $self->o('name_root'),
+                'protein_trees_list' => [ 'aln.emf', 'nh.emf', 'nhx.emf', 'aa.fasta', 'cds.fasta' ],
+                'ncrna_trees_list'   => [ 'aln.emf', 'nh.emf', 'nhx.emf', 'aa.fasta' ],
+                'inputlist'          => '#expr(($tree_type eq "protein_trees") ? $protein_trees_list : $ncrna_trees_list)expr#',
+                'input_id'           => { 'tree_type' => '#tree_type#', 'extension' => '#_range_start#', 'dump_file_name' => '#name_root#.#_range_start#'},
+                'fan_branch_code'    => 2,
             },
             -wait_for => [ 'dump_a_tree' ],
             -flow_into => {
@@ -183,7 +190,7 @@ sub pipeline_analyses {
             -hive_capacity => 10,
             -wait_for => [ 'collate_dumps' ],
             -flow_into => {
-                1 => [ 'md5sum' ],
+                1 => [ 'md5sum', 'copy_readme' ],
             },
         },
 
@@ -199,9 +206,19 @@ sub pipeline_analyses {
             -module     => 'Bio::EnsEMBL::Hive::RunnableDB::SystemCmd',
             -parameters => {
                 'target_dir'  => $self->o('target_dir'),
-                'cmd'         => 'cd #target_dir# ; md5sum *.gz >MD5SUM',
+                'cmd'         => 'cd #target_dir# ; md5sum *.gz >MD5SUM.#tree_type#',
             },
             -wait_for => [ 'archive_long_files' ],
+            -hive_capacity => 10,
+        },
+
+        {   -logic_name => 'copy_readme',
+            -module     => 'Bio::EnsEMBL::Hive::RunnableDB::SystemCmd',
+            -parameters => {
+                'readme_dir'  => $self->o('readme_dir'),
+                'target_dir'  => $self->o('target_dir'),
+                'cmd'         => 'cp #readme_dir#/README.#tree_type#.dumps #target_dir#',
+            },
             -hive_capacity => 10,
         },
     ];

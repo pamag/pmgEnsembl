@@ -1,7 +1,25 @@
 #
 # Ensembl module for Bio::EnsEMBL::DBSQL::Funcgen::ExternalFeatureAdaptor
 #
-# You may distribute this module under the same terms as Perl itself
+
+=head1 LICENSE
+
+  Copyright (c) 1999-2011 The European Bioinformatics Institute and
+  Genome Research Limited.  All rights reserved.
+
+  This software is distributed under a modified Apache license.
+  For license details, please see
+
+    http://www.ensembl.org/info/about/code_licence.html
+
+=head1 CONTACT
+
+  Please email comments or questions to the public Ensembl
+  developers list at <ensembl-dev@ebi.ac.uk>.
+
+  Questions may also be sent to the Ensembl help desk at
+  <helpdesk@ensembl.org>.
+
 
 =head1 NAME
 
@@ -19,18 +37,6 @@ my $features = $afa->fetch_all_by_Slice($slice);
 
 The ExternalFeatureAdaptor is a database adaptor for storing and retrieving
 ExternalFeature objects.
-
-=head1 AUTHOR
-
-This module was created by Nathan Johnson.
-
-This module is part of the Ensembl project: http://www.ensembl.org/
-
-=head1 CONTACT
-
-Post comments or questions to the Ensembl development list: ensembl-dev@ebi.ac.uk
-
-=head1 METHODS
 
 =cut
 
@@ -90,6 +96,7 @@ sub _columns {
 			ef.seq_region_start      ef.seq_region_end
 			ef.seq_region_strand     ef.display_label
 			ef.feature_type_id       ef.feature_set_id
+			ef.interdb_stable_id
 	   );
 }
 
@@ -124,7 +131,8 @@ sub _objs_from_sth {
 	    $external_feature_id,  $efg_seq_region_id,
 	    $seq_region_start,      $seq_region_end,
 	    $seq_region_strand,     $fset_id,
-		$display_label,         $ftype_id
+		$display_label,         $ftype_id,
+		$interdb_stable_id
 	   );
 
 	$sth->bind_columns(
@@ -132,6 +140,7 @@ sub _objs_from_sth {
 					   \$seq_region_start,      \$seq_region_end,
 					   \$seq_region_strand,     \$display_label,         
 					   \$ftype_id,              \$fset_id,
+					   \$interdb_stable_id
 					  );
 
 
@@ -247,6 +256,7 @@ sub _objs_from_sth {
 		  'display_label'  => $display_label,
 		  'feature_set'    => $fset_hash{$fset_id},
 		  'feature_type'   => $ftype_hash{$ftype_id},
+		  'interdb_stable_id',    => $interdb_stable_id,
 		 });
 	  }
 	
@@ -331,5 +341,25 @@ sub store{
   return \@efs;
 }
 
+=head2 fetch_by_interdb_stable_id
+
+  Arg [1]    : Integer $stable_id - The 'interdb stable id' of the ExternalFeature to retrieve
+  Example    : my $rf = $rf_adaptor->fetch_by_interdb_stable_id(1);
+  Description: Retrieves a ExternalFeature via its interdb_stable id. This is really an internal
+               method to facilitate inter DB linking. 
+  Returntype : Bio::EnsEMBL::Funcgen::ExternalFeature
+  Exceptions : none
+  Caller     : general
+  Status     : Stable
+
+=cut
+
+sub fetch_by_interdb_stable_id {
+  my ($self, $stable_id) = @_;
+
+  $self->bind_param_generic_fetch($stable_id, SQL_INTEGER);
+
+  return $self->generic_fetch('ef.interdb_stable_id=?')->[0];
+}
 
 1;

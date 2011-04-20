@@ -1,3 +1,23 @@
+=head1 LICENSE
+
+ Copyright (c) 1999-2011 The European Bioinformatics Institute and
+ Genome Research Limited.  All rights reserved.
+
+ This software is distributed under a modified Apache license.
+ For license details, please see
+
+   http://www.ensembl.org/info/about/code_licence.html
+
+=head1 CONTACT
+
+ Please email comments or questions to the public Ensembl
+ developers list at <dev@ensembl.org>.
+
+ Questions may also be sent to the Ensembl help desk at
+ <helpdesk@ensembl.org>.
+
+=cut
+
 # Ensembl module for Bio::EnsEMBL::Variation::VariationSet
 #
 # Copyright (c) 2010 Ensembl
@@ -21,10 +41,6 @@ variations.
 This is a class representing a set of variations that are grouped by e.g.
 study, method, quality measure etc.
 
-=head1 CONTACT
-
-Post questions to the Ensembl development list: ensembl-dev@ebi.ac.uk
-
 =head1 METHODS
 
 =cut
@@ -38,6 +54,7 @@ package Bio::EnsEMBL::Variation::VariationSet;
 use Bio::EnsEMBL::Storable;
 use Bio::EnsEMBL::Utils::Argument qw(rearrange);
 use Bio::EnsEMBL::Utils::Exception qw(throw deprecate warning);
+use Bio::EnsEMBL::Utils::Iterator;
 
 use vars qw(@ISA);
 
@@ -79,6 +96,9 @@ sub new {
 
   my ($dbID, $adaptor, $name, $description) =
     rearrange([qw(DBID ADAPTOR NAME DESCRIPTION)], @_);
+  
+  #ÊCheck that the dbID does not exceed the maximum dbID that can be stored in the variation_set_id SET construct in variation_set_variation
+  warn("Primary key variation_set_id $dbID for variation set '$name' exceeds " . $Bio::EnsEMBL::Variation::DBSQL::VariationSetAdaptor::MAX_VARIATION_SET_ID . ". Therefore, this variation set cannot be properly referenced in variation_set_variation") if ($dbID > $Bio::EnsEMBL::Variation::DBSQL::VariationSetAdaptor::MAX_VARIATION_SET_ID);
   
   return bless {'dbID' => $dbID,
                 'adaptor' => $adaptor,
@@ -190,6 +210,38 @@ sub get_all_Variations {
   return $variation_adaptor->fetch_all_by_VariationSet($self);
 }
 
+=head2 get_Variation_Iterator
+
+  Example    : my $var_iterator = $vs->get_Variation_Iterator;
+  Description: Gets an iterator over  all variations belonging to this variation set and all of its subsets.
+  Returntype : Bio::EnsEMBL::Utils::Iterator
+  Exceptions : none
+  Caller     : general
+  Status     : Experimental
+
+=cut
+
+sub get_Variation_Iterator {
+    my $self = shift;
+  
+    # A database adaptor must be attached to this object   
+    unless ($self->adaptor) {
+        warning('Cannot get variations without attached adaptor');
+        return Bio::EnsEMBL::Utils::Iterator->new;
+    }
+  
+    # Call the method in VariationAdaptor that will handle this
+    my $variation_adaptor = $self->adaptor->db->get_VariationAdaptor();
+    
+    unless ($variation_adaptor) {
+        warning('Could not get variation adaptor from database');
+        return Bio::EnsEMBL::Utils::Iterator->new;
+    }
+
+    # Get an iterator over variations from this set (and its subsets)
+    return $variation_adaptor->fetch_Iterator_by_VariationSet($self);
+}
+
 =head2 get_all_VariationFeatures_by_Slice
 
   Arg [1]    : Bio::EnsEMBL:Variation::Slice $slice
@@ -240,6 +292,25 @@ sub name {
   $self->{'name'} = $name if (defined($name));
   
   return $self->{'name'};
+}
+
+#ÊAPI-internal subroutine to get the bitvalue of this set's id and all of its subsets (unless specifically indicated not to)
+sub _get_bitvalue {
+  my $self = shift;
+  my @args = @_;
+  
+  #ÊIf the subsets should be exluded, call the subroutine in the adaptor and return the result. No caching.
+  if (@args) {
+    return $self->adaptor->_get_bitvalue($self,@args);
+  }
+  
+  # Check if we have cached the bitvalue (including subsets), otherwise get it and cache it
+  unless (exists($self->{'_bitvalue'})) {
+    $self->{'_bitvalue'} = $self->adaptor->_get_bitvalue($self);
+  }
+  
+  # Return the cached value
+  return $self->{'_bitvalue'};
 }
 
 1;

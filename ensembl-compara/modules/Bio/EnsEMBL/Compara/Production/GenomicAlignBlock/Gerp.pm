@@ -1,13 +1,21 @@
-#
-# Ensembl module for Bio::EnsEMBL::Compara::Production::GenomicAlignBlock::Gerp
-#
-# Cared for by Kathryn Beal <kbeal@ebi.ac.uk>
-#
-# Copyright Ewan Birney
-#
-# You may distribute this module under the same terms as perl itself
+=head1 LICENSE
 
-# POD documentation - main docs before the code
+  Copyright (c) 1999-2010 The European Bioinformatics Institute and
+  Genome Research Limited.  All rights reserved.
+
+  This software is distributed under a modified Apache license.
+  For license details, please see
+
+    http://www.ensembl.org/info/about/code_licence.html
+
+=head1 CONTACT
+
+  Please email comments or questions to the public Ensembl
+  developers list at <dev@ensembl.org>.
+
+  Questions may also be sent to the Ensembl help desk at
+  <helpdesk@ensembl.org>.
+
 =head1 NAME
 
 Bio::EnsEMBL::Compara::Production::GenomicAlignBlock::Gerp 
@@ -25,20 +33,6 @@ Bio::EnsEMBL::Compara::Production::GenomicAlignBlock::Gerp
     the program GERP.pl. It then parses the output and writes the constrained
     elements in the GenomicAlignBlock table and the conserved scores in the 
     ConservationScore table
-
-=head1 AUTHOR - Kathryn Beal
-
-This modules is part of the Ensembl project http://www.ensembl.org
-
-Email kbeal@ebi.ac.uk
-
-=head1 CONTACT
-
-This modules is part of the EnsEMBL project (http://www.ensembl.org)
-
-Questions can be posted to the ensembl-dev mailing list:
-ensembl-dev@ebi.ac.uk
-
 
 =head1 APPENDIX
 
@@ -60,6 +54,7 @@ use Bio::AlignIO;
 use Bio::LocatableSeq;
 use Bio::EnsEMBL::Compara::ConservationScore;
 use Bio::EnsEMBL::Compara::Graph::NewickParser;
+use Bio::EnsEMBL::Utils::SqlHelper;
 
 use Bio::EnsEMBL::Hive::Process;
 our @ISA = qw(Bio::EnsEMBL::Hive::Process);
@@ -121,6 +116,12 @@ sub fetch_input {
       }
   }
 
+  #flag as to whether to write out conservation scores to the conservation_score
+  #table. Default is to write them out.
+  unless (defined $self->no_conservation_scores) {
+      $self->no_conservation_scores(0);
+  }
+
   my $gaba = $self->{'comparaDBA'}->get_GenomicAlignBlockAdaptor;
   my $gab = $gaba->fetch_by_dbID($self->genomic_align_block_id);
 
@@ -129,6 +130,9 @@ sub fetch_input {
   #only run gerp if there are more than 2 genomic aligns. Gerp requires more
   #than 2 sequences to be represented at a position
   if (scalar(@$gas) > 2) {
+
+      #if skipping species, need to make sure I enough final species 
+      my $num_spp = 0; 
 
       #decide whether to use GenomicAlignTree object or species tree.
       my $mlss = $gab->method_link_species_set;
@@ -142,11 +146,27 @@ sub fetch_input {
 
 	  foreach my $leaf (@{$gat->get_all_leaves}) {
 	      my $genomic_align = (sort {$a->dbID <=> $b->dbID} @{$leaf->genomic_align_group->get_all_GenomicAligns})[0];
+
+	      #skip species in species_to_skip array
+	      if (defined $self->species_to_skip && @{$self->species_to_skip}) {
+		  if (grep {$_ eq $genomic_align->genome_db->dbID} @{$self->species_to_skip}) {
+		      $leaf->disavow_parent;
+		      $gat = $gat->minimize_tree;
+		      next;
+		  }
+	      }
+	      $num_spp++;
 	      my $name = "_" . $genomic_align->genome_db->dbID . "_" .
 		$genomic_align->dnafrag_id . "_" . $genomic_align->dnafrag_start . "_" . $genomic_align->dnafrag_end . "_";
 	      $leaf->name($name);
 	  }
 
+	  #check still have enough species
+	  #print "NUM SPP $num_spp\n";
+	  if ($num_spp < 3) {
+	      $self->{'run_gerp'} = 0;
+	      return 1;
+	  }
 	  $tree_string = $gat->newick_simple_format();
 
 	  $self->{'modified_tree_file'} = $self->worker_temp_directory . $TREE_FILE;
@@ -247,6 +267,26 @@ sub run {
 
 sub write_output {
     my ($self) = @_;
+
+    print "WRITE OUTPUT\n" if $self->debug;
+
+    if ($self->do_transactions) {
+	my $compara_conn = $self->{'comparaDBA'}->dbc;
+
+	my $compara_helper = Bio::EnsEMBL::Utils::SqlHelper->new(-DB_CONNECTION => $compara_conn);
+	$compara_helper->transaction(-CALLBACK => sub {
+	     $self->_write_output;
+         });
+    } else {
+	$self->_write_output;
+    }
+
+  return 1;
+
+}
+
+sub _write_output {
+    my ($self) = @_;
   
     #if haven't run gerp, don't try to store any results!
     if (!$self->{'run_gerp'}) { 
@@ -263,7 +303,7 @@ sub write_output {
     } else {
 	throw("Invalid version number. Valid values are 1 or 2.1\n");
     }
-    
+
     return 1;
 }
 
@@ -284,6 +324,20 @@ sub species_set {
   my $self = shift;
   $self->{'_species_set'} = shift if(@_);
   return $self->{'_species_set'};
+}
+
+#read species_to_skip from analysis_job table
+sub species_to_skip {
+  my $self = shift;
+  $self->{'_species_to_skip'} = shift if(@_);
+  return $self->{'_species_to_skip'};
+}
+
+#read no_conservation_scores from analysis_job table
+sub no_conservation_scores {
+  my $self = shift;
+  $self->{'_no_conservation_scores'} = shift if(@_);
+  return $self->{'_no_conservation_scores'};
 }
 
 #read method_link_type from analysis table
@@ -355,6 +409,12 @@ sub param_file_tmp {
   return $self->{'_param_file_tmp'};
 }
 
+sub do_transactions {
+  my $self = shift;
+  $self->{'_do_transactions'} = shift if(@_);
+  return $self->{'_do_transactions'};
+}
+
 
 ##########################################
 #
@@ -401,6 +461,19 @@ sub get_params {
     if(defined($params->{'species_set'})) {
         $self->species_set($params->{'species_set'});
     }
+    if(defined($params->{'species_to_skip'})) {
+        $self->species_to_skip($params->{'species_to_skip'});
+    }
+    if (defined($params->{'no_conservation_scores'})) {
+        $self->no_conservation_scores($params->{'no_conservation_scores'});
+    }
+    if (defined($params->{'do_transactions'})) {
+	$self->{_do_transactions} = $params->{'do_transactions'};
+    } else {
+	#default is to do transactions
+	$self->{_do_transactions} = 1;
+    }
+
     return 1;
 }
 
@@ -594,14 +667,15 @@ sub _parse_results_v2 {
   my ($self,) = @_;
 
   #generate rates and constraints file names
-  $self->_parse_rates_file($self->{'mfa_file'}.$RATES_FILE_SUFFIX, 2);
-
+  if (!$self->no_conservation_scores) {
+      $self->_parse_rates_file($self->{'mfa_file'}.$RATES_FILE_SUFFIX, 2);
+  }
   $self->_parse_cons_file($self->{'mfa_file'}.$RATES_FILE_SUFFIX.$CONS_FILE_SUFFIX, 2);
 }
 
 
 #This method parses the gerp constraints file and stores the values as 
-#genomic_align_blocks
+#constrained_elements
 #cons_file : full filename of constraints file
 #example : $self->_parse_cons_file(/tmp/worker.2580193/gerp_alignment.mfa.rates_RS8.5_md6_cons.txt);
 sub _parse_cons_file {
@@ -915,9 +989,9 @@ sub _build_tree_string {
     foreach my $leaf (@{$tree->get_all_leaves}) {
 	#check have names rather than genome_db_ids
 	if ($leaf->name =~ /\D+/) {
-	    $leaf->name($leaf_name{$leaf->name});
+	    $leaf->name($leaf_name{lc($leaf->name)});
 	} 
-	$leaf_check{$leaf->name}++;
+	$leaf_check{lc($leaf->name)}++;
     }
 
     #Check have one instance in the tree of each genome_db in the database

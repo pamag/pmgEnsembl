@@ -11,10 +11,10 @@ use Bio::EnsEMBL::Registry;
 my $log_config = <<LOGCFG;
 log4perl.logger=DEBUG, Screen
 log4perl.appender.Screen=Log::Log4perl::Appender::Screen
-log4perl.appender.Screen.stderr=0
+log4perl.appender.Screen.stderr=1
 log4perl.appender.Screen.Threshold=DEBUG
 log4perl.appender.Screen.layout=Log::Log4perl::Layout::PatternLayout
-log4perl.appender.Screen.layout.ConversionPattern=%d %p> %F{1}:%L %M - %m%n
+log4perl.appender.Screen.layout.ConversionPattern=%d %p> %M{2}::%L - %m%n
 LOGCFG
 
 my @options = qw( 
@@ -22,12 +22,14 @@ my @options = qw(
   target=s 
   engine=s 
   compara=s 
+  source_name=s
   write_to_db 
   display_xrefs
   all_sources
   one_to_many
   file=s 
   registry=s 
+  log_cfg=s
   verbose help man 
 );
 
@@ -37,7 +39,7 @@ run();
 
 sub run {
   my $opts = _get_opts();
-  _initalise_log();
+  _initalise_log($opts);
   my $runnable = _build_runnable($opts);
   $runnable->run_without_hive();
   return;
@@ -102,6 +104,7 @@ sub _build_engine {
   );
   $args{-ALL_SOURCES} = 1 if $opts->{all_sources};
   $args{-ONE_TO_MANY} = 1 if $opts->{one_to_many};
+  $args{-SOURCE}      = $opts->{source_name} if $opts->{source_name};
   return $mod->new(%args);
 }
 
@@ -132,8 +135,14 @@ sub _exit {
 my $log4perl_available = 0;
 
 sub _initalise_log {
+  my ($opts) = @_;
   if(_runtime_import('Log::Log4perl')) {
-    Log::Log4perl->init(\$log_config);
+    if($opts->{log_cfg}) {
+      Log::Log4perl->init($opts->{log_cfg});
+    }
+    else {
+      Log::Log4perl->init(\$log_config);
+    }
     $log4perl_available = 1;
   }
 }
@@ -167,7 +176,7 @@ project_dbentry.pl
 
 =head1 SYNOPSIS
 
-  ./project_dbentry.pl -registry REG -source SRC -target TRG -compara COM [-display_xrefs] [-engine ENG] [-write_to_db] [-file FILE] [-verbose] [-help | -man]
+  ./project_dbentry.pl -registry REG -source SRC -target TRG -compara COM [-log_cfg LOC] -display_xrefs] [-engine ENG] [-write_to_db] [-file FILE] [-verbose] [-help | -man]
 
 =head1 DESCRIPTION
 
@@ -189,31 +198,73 @@ will produce a CSV of what I<would> have been written back to the DB.
 
 =over 8
 
-=item B<--registry> - The registry to use
+=item B<--registry>
 
-=item B<--source> - The source species (species with GOs)
+The registry to use
 
-=item B<--target> - The target species (species without GOs)
+=item B<--source>
 
-=item B<--compara> - The compara database to use
+The source species (species with GOs)
 
-=item B<--engine> - The engine to use; defaults to GOAProjectionEngine or DisplayXrefProjectionEngine. Must be a fully qualified package
+=item B<--target>
 
-=item B<--display_xrefs> - Flags we wish to project display Xrefs
+The target species (species without GOs)
 
-=item B<--all_sources> - Allow the input of any sources of information
+=item B<--compara>
 
-=item B<--one_to_many> - Bring in 1:m relationships rather than just 1:1
+The compara database to use
 
-=item B<--write_to_db> - Indicates we want Xrefs going back to the core DB. If used we assume the registry's core DBAdaptor is writable
+=item B<--log_cfg>
 
-=item B<--file> - Location to write output to. Can be a directory (so an automatically generated name will be given) or a full path
+The log4perl configuration location; otherwise the code will use a default
+logger to STDERR
 
-=item B<--verbose> - Start emitting more messages
+=item B<--source_name>
 
-=item B<--help> - Basic help with options
+Optional argument allowing the specification of the level to perform 
+projections at. This means if we wish to project from Gene to Gene you can
+specify ENSEMBLGENE (these are the same names as used in MEMBER). The default
+is ENSEMBLPEP and is the recommended mode.
 
-=item B<--man> - Manual version of the help. More complete 
+=item B<--engine>
+
+The engine to use; defaults to GOAProjectionEngine or 
+DisplayXrefProjectionEngine. Must be a fully qualified package
+
+=item B<--display_xrefs>
+
+Flags we wish to project display Xrefs
+
+=item B<--all_sources>
+
+Allow the input of any sources of information
+
+=item B<--one_to_many>
+
+Bring in 1:m relationships rather than just 1:1
+
+=item B<--write_to_db>
+
+Indicates we want Xrefs going back to the core DB. If used we assume the 
+registry's core DBAdaptor is writable
+
+=item B<--file>
+
+Location to write output to. Can be a directory (so an automatically 
+generated name will be given) or a full path. Specifying B<-> will write the
+file out to STDOUT.
+
+=item B<--verbose>
+
+Start emitting more messages
+
+=item B<--help>
+
+Basic help with options
+
+=item B<--man>
+
+Manual version of the help. More complete 
 
 =back
 

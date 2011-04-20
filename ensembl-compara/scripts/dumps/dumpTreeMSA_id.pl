@@ -68,7 +68,7 @@ my $dba = Bio::EnsEMBL::Hive::URLFactory->fetch( $url.';type=compara' );
 
 my ($prefix, $adaptor) = $nc
     ? ('ncrna_trees_.', $dba->get_NCTreeAdaptor)
-    : ('gene_trees_.', $dba->get_ProteinTreeAdaptor);
+    : ('protein_trees_.', $dba->get_ProteinTreeAdaptor);
 
 my @tree_ids;
 if($tree_id_file and -r $tree_id_file) {
@@ -200,7 +200,7 @@ sub dumpTreeFasta {
     warn("missing tree\n") unless($tree);
     my $sa;
 
-    $sa = $tree->get_SimpleAlign(-id_type => 'STABLE', -UNIQ_SEQ=>1, -CDNA=>$cdna);
+    $sa = $tree->get_SimpleAlign(-id_type => 'STABLE', -CDNA=>$cdna);
     $sa->set_displayname_flat(1);
     my $alignIO = Bio::AlignIO->newFh(-fh => $fh,
                                       -format => 'fasta'

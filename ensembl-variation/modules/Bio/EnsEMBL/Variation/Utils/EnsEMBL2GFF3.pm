@@ -1,3 +1,23 @@
+=head1 LICENSE
+
+ Copyright (c) 1999-2011 The European Bioinformatics Institute and
+ Genome Research Limited.  All rights reserved.
+
+ This software is distributed under a modified Apache license.
+ For license details, please see
+
+   http://www.ensembl.org/info/about/code_licence.html
+
+=head1 CONTACT
+
+ Please email comments or questions to the public Ensembl
+ developers list at <dev@ensembl.org>.
+
+ Questions may also be sent to the Ensembl help desk at
+ <helpdesk@ensembl.org>.
+
+=cut
+
 
 package Bio::EnsEMBL::Variation::Utils::EnsEMBL2GFF3;
 
@@ -12,14 +32,16 @@ use warnings;
     
     sub gff_header {
         my $self = shift;
-      
+        
+        my %args = @_;
+        
         # build up a date string in the format specified by the GFF spec
     
         my ( $sec, $min, $hr, $mday, $mon, $year ) = localtime;
         $year += 1900;    # correct the year
         $mon++;           # correct the month
         
-        my $date = "$year-$mon-$mday";
+        my $date = sprintf "%4d-%02d-%02d", $year, $mon, $mday;
         
         my $region      = $self->seq_region_name;
         my $start       = $self->start;
@@ -28,21 +50,40 @@ use warnings;
         
         my $hdr =
             "##gff-version 3\n"
-          . "##date $date\n"
-          . "##sequence-region $region $start $end\n"
-          . "##genome-build $assembly\n";
-    
+          . "##file-date $date\n"
+          . "##genome-build ensembl $assembly\n";
+        
+        $hdr .= "##sequence-region $region $start $end\n" unless $args{no_sequence_region};
+        
         return $hdr;
     }
     
     sub gvf_header {
         my $self = shift;
-        
+       
+        my %args = @_;
+
         my $hdr = $self->gff_header(@_);
         
-        $hdr .= "##gvf-version 1.02\n";
-        $hdr .= "##feature-ontology http://song.cvs.sourceforge.net/viewvc/song/ontology/so.obo?revision=1.263\n";
-    
+        my $mca = $self->adaptor->db->get_MetaContainerAdaptor;
+        my $schema_version = $mca->get_schema_version;
+        my $species_name = $mca->get_scientific_name;
+        $species_name =~ s/ /_/g;
+        my $url = 'http://e'.$schema_version.'.ensembl.org/'.$species_name;
+        
+        $hdr .= "##gvf-version 1.05\n";
+        $hdr .= "##feature-ontology http://song.cvs.sourceforge.net/viewvc/song/ontology/so.obo?revision=1.283\n";
+        $hdr .= "##data-source Source=ensembl;version=$schema_version;url=$url\n";
+        $hdr .= "##file-version $schema_version\n";
+        
+        if (my $individual = $args{individual}) {
+            $hdr .= "##individual-id ".$individual->to_gvf."\n";
+        }
+
+        if (my $population = $args{population}) {
+            $hdr .= "##attribute-method ".$population->to_gvf."\n";
+        }
+
         return $hdr;
     }
 }
@@ -63,12 +104,18 @@ use warnings;
 
         my $gff = $self->_gff_hash(@_);
 
+        return undef unless defined $gff;
+
         $gff->{score}  = '.' unless defined $gff->{score};
         $gff->{strand} = '.' unless defined $gff->{strand};
         $gff->{phase}  = '.' unless defined $gff->{phase};
 
         # order as per GFF3 spec: http://www.sequenceontology.org/gff3.shtml 
 
+        for my $req (qw(source type start end)) {
+            die "'$req' attribute required for GFF" unless $gff->{$req};
+        }
+ 
         my $gff_str = join( "\t",
             $gff->{seqid}, $gff->{source}, $gff->{type}, $gff->{start},
             $gff->{end}, $gff->{score}, $gff->{strand}, $gff->{phase},
@@ -115,7 +162,15 @@ use warnings;
         my $seqid = $rebase ? $gff_seqid.'_'.$self->slice->start.'-'.$self->slice->end : $gff_seqid;
         my $start = $rebase ? $self->start : $self->seq_region_start;
         my $end = $rebase ? $self->end : $self->seq_region_end;
-
+        
+        # GFF3 does not allow start > end, and mandates that for zero-length features (e.g. insertions) 
+        # start = end and the implied insertion site is to the right of the specified base, so we use the
+        # smaller of the two values
+        
+        if ($start > $end) {
+            $start = $end;
+        }
+        
         my $gff = {
             seqid   => $gff_seqid,
             source  => $gff_source,
@@ -154,111 +209,8 @@ use warnings;
 
 {
     package Bio::EnsEMBL::Variation::VariationFeature;
-
-    my %EnsEMBL2SO_consequence = (
-        'ESSENTIAL_SPLICE_SITE' => { 
-            term            => 'splice_site_variant', 
-            id              => 'SO:0001629', 
-            feature_type    => 'mRNA',
-        },
-        'STOP_GAINED' => { 
-            term            => 'stop_gained', 
-            id              => 'SO:0001587',
-            feature_type    => 'mRNA',
-        },
-        'STOP_LOST' => { 
-            term            => 'stop_lost', 
-            id              => 'SO:0001578',
-            feature_type    => 'mRNA',
-        },
-        'COMPLEX_INDEL' => { 
-            term            => 'Complex_change_in_transcript', 
-            id              => 'SO:0001577',
-            feature_type    => 'mRNA',
-        },
-        'FRAMESHIFT_CODING' => { 
-            term            => 'Frameshift_variant', 
-            id              => 'SO:0001589', 
-            feature_type    => 'mRNA',
-        },
-        'NON_SYNONYMOUS_CODING' => { 
-            term            => 'Non_synonymous_codon', 
-            id              => 'SO:0001583', 
-            feature_type    => 'mRNA',
-        },
-        'SPLICE_SITE' => { 
-            term            => 'splice_region_variant', 
-            id              => 'SO:0001630', 
-            feature_type    => 'mRNA',
-        },
-        'PARTIAL_CODON' => { 
-            term            => 'incomplete_terminal_codon_variant', 
-            id              => 'SO:0001626',
-            feature_type    => 'mRNA',
-        },
-        'SYNONYMOUS_CODING' => { 
-            term            => 'Synonymous_codon', 
-            id              => 'SO:0001588',
-            feature_type    => 'mRNA',
-        },
-        'REGULATORY_REGION' => { 
-            term            => 'regulatory_region_variant', 
-            id              => 'SO:0001566',
-            feature_type    => 'genomic',
-        },
-        'WITHIN_MATURE_miRNA' => { 
-            term            => 'Mature_miRNA_variant', 
-            id              => 'SO:0001620',
-            feature_type    => 'miRNA',
-        },
-        '5PRIME_UTR' => { 
-            term            => '5_prime_UTR_variant', 
-            id              => 'SO:0001623',
-            feature_type    => 'mRNA'
-        },
-        '3PRIME_UTR' => { 
-            term            => '3_prime_UTR_variant', 
-            id              => 'SO:0001624',
-            feature_type    => 'mRNA',
-        },
-        'UTR' => {},
-        'INTRONIC' => { 
-            term            => 'Intron_variant', 
-            id              => 'SO:0001627',
-            feature_type    => 'mRNA',
-        },
-        'NMD_TRANSCRIPT' => { 
-            term            => 'NMD_transcript_variant', 
-            id              => 'SO:0001621',
-            feature_type    => 'mRNA',
-        },
-        'WITHIN_NON_CODING_GENE' => { 
-            term            => 'Non_coding_RNA_variant', 
-            id              => 'SO:0001619',
-            feature_type    => 'ncRNA'
-        },
-        'UPSTREAM' => { 
-            term            => '5KB_upstream_variant', 
-            id              => 'SO:0001635',
-            feature_type    => 'mRNA',
-        },
-        'DOWNSTREAM' => { 
-            term            => '5KB_downstream_variant',
-            id              => 'SO:0001633',
-            feature_type    => 'mRNA',
-        },
-        'HGMD_MUTATION' => {},
-        'NO_CONSEQUENCE' => { 
-            term            => 'Sequence_variant', 
-            id              => 'SO:0001060',
-            feature_type    => 'genomic',
-        },
-        'INTERGENIC' => { 
-            term            => 'Intergenic_variant', 
-            id              => 'SO:0001628',
-            feature_type    => 'genomic',
-        },
-    );
+    
+    use Bio::EnsEMBL::Utils::Sequence qw(reverse_comp expand);
     
     sub to_gvf {
         my $self = shift;
@@ -266,107 +218,92 @@ use warnings;
     }
     
     sub _gff_hash {
+   
         my $self = shift;
         
         my $gff = $self->SUPER::_gff_hash(@_);
+        
+        my %args = @_;
+        
+        my $include_consequences = $args{include_consequences};
 
         $gff->{source} = $self->source;
-        
-        $gff->{type} = $self->var_class;
 
-        # Use the variation name (rsID etc.) as the ID
-        
-        my $gvf_id = $self->variation_name;
+        $gff->{type} = $self->class_SO_term;
 
-        $gff->{attributes}->{ID} = $gvf_id;
+        my $source = $self->source;
+
+        $source .= '_'.$self->source_version if defined $self->source_version;
+
+        $gff->{attributes}->{Dbxref} = "$source:".$self->variation_name;
+
+        # Use the variation name (rsID etc.) concatenated with the seq_region_name and positions as the ID
+
+        $gff->{attributes}->{ID} = $self->dbID;
 
         $gff->{attributes}->{Variant_effect} = [];
 
-        # CNV probes and HGMD mutations are special cases, so deal with them first
-
-        if ($self->allele_string eq 'CNV_PROBE') {
-            
-            $gff->{attributes}->{Reference_seq} = '~';
-            $gff->{attributes}->{Variant_seq} = '~';
-            
-            for my $ens_cons (@{ $self->get_consequence_type }) {
-                my $effect          = $EnsEMBL2SO_consequence{$ens_cons}->{term};
-                my $feature_type    = $EnsEMBL2SO_consequence{$ens_cons}->{feature_type};
-                my $features        = $gff->{seqid};
-                        
-                my $effect_string = join ' ', ($effect, 0, $feature_type, $features);
-                push @{ $gff->{attributes}->{Variant_effect} }, $effect_string;
-            }
-            
-            return $gff;
-        }
-        
-        if ($self->allele_string eq 'HGMD_MUTATION') {
-            
-            $gff->{attributes}->{Reference_seq} = '~';
-            $gff->{attributes}->{Variant_seq} = '~';
-            
-            # there's not really anything useful to put in the Variant_effect 
-            # attribute, so we don't add one
-            
-            return $gff;
-        }
-        
         # the Variant_seq attribute requires a comma separated list of alleles
 
         my @alleles = split '/', $self->allele_string;
         my $ref_seq = shift @alleles; # shift off the reference allele
-        
+       
         $gff->{attributes}->{Variant_seq} = join ',', @alleles;
 
+        my $index = 0;
+
+        # expand tandem repeat alleles, because TranscriptVariationAlleles use the expanded sequence
+        
+        map { expand(\$_) } @alleles; 
+
+        # if you expand e.g. (T)0 you get an empty string, which we treat as a deletion, so default to '-'
+
+        my %allele_index = map { ($_ || '-') => $index++ } @alleles;
+        
         # the reference sequence should be set to '~' if the sequence is longer than 50 nucleotides
 
-        $ref_seq = '~' if length($ref_seq) > 50;
+        $ref_seq = '~' if CORE::length($ref_seq) > 50;
         $gff->{attributes}->{Reference_seq} = $ref_seq;
+        
+        # Hack for HGMD mutations
+       
+        if ($self->allele_string eq 'HGMD_MUTATION') {
+            $gff->{attributes}->{Reference_seq} = '~';
+            $gff->{attributes}->{Variant_seq}   = '~';
+            $allele_index{$self->allele_string} = 0;
+        }
+        
+        if ($include_consequences) {
+            for my $tv (@{ $self->get_all_TranscriptVariations }) {
 
-        my $allele_index = 0;
-        
-        for my $allele (@alleles) {
-            
-            my @tvs = @{ $self->get_all_TranscriptVariations };
-            
-            if (@tvs) {
-                
-                # this variation affects some transcripts
-        
-                for my $tv (@tvs) {
+                unless ($tv->get_all_alternate_TranscriptVariationAlleles) {
+                    warn $self->variation_name." has no alternate alleles?";
+                    next;
+                }
+
+                for my $tva (@{ $tv->get_all_alternate_TranscriptVariationAlleles }) {
+
+                    my $allele_idx = $allele_index{$tva->variation_feature_seq};
                     
-                    for my $ens_cons (@{ $tv->consequence_type }) {
-                    
-                        my $effect          = $EnsEMBL2SO_consequence{$ens_cons}->{term};
-                        my $feature_type    = $EnsEMBL2SO_consequence{$ens_cons}->{feature_type};
-                        my $features        = $tv->transcript->stable_id;
-                        
-                        my $effect_string = join ' ', ($effect, $allele_index, $feature_type, $features);
-                
-                        push @{ $gff->{attributes}->{Variant_effect} }, $effect_string;
+                    if (defined $allele_idx) {
+                        for my $oc (@{ $tva->get_all_OverlapConsequences }) {
+
+                            my $effect_string = join ' ', (
+                                $oc->SO_term, 
+                                $allele_idx,
+                                $oc->feature_SO_term,
+                                $tv->transcript_stable_id,
+                            );
+
+                            push @{ $gff->{attributes}->{Variant_effect} }, $effect_string;
+                        }
+                    }
+                    else {
+                        warn "No allele_index entry for allele: ".$tva->variation_feature_seq.
+                            " of ".$self->variation_name."?\n";
                     }
                 }
             }
-            else { 
-                
-                # no TranscriptVariations, so the effect of all alleles will just be the
-                # effect of the VariationFeature
-                
-                for my $ens_cons (@{ $self->get_consequence_type }) {
-                    
-                    my $effect          = $EnsEMBL2SO_consequence{$ens_cons}->{term};
-                    my $feature_type    = $EnsEMBL2SO_consequence{$ens_cons}->{feature_type};
-                    # XXX: I guess the feature affected by this variation is the slice?
-                    my $features        = $gff->{seqid};
-                    
-                    my $effect_string = join ' ', ($effect, $allele_index, $feature_type, $features);
-                
-                    push @{ $gff->{attributes}->{Variant_effect} }, $effect_string;
-                }
-            }
-            
-            $allele_index++;
         }
         
         return $gff;
@@ -386,10 +323,40 @@ use warnings;
         
         $gff->{source} = $self->source;
         
-        $gff->{type} = $self->class;
+        my $source = $self->source;
+
+        $source .= ':'.$self->study_name if $self->study_name;
+
+        $gff->{attributes}->{Dbxref} = $source;
+
+        # XXX: for now, just resort to the highest level SO class term as we don't have 
+        # accurate class information in the database
+
+        $gff->{type} = 'sequence_alteration';
         
-        $gff->{attributes}->{Reference_seq} = $self->end > $self->start+50 ? '~' : $self->get_reference_sequence;
-        
+        #$gff->{attributes}->{Reference_seq} = $self->end > $self->start+50 ? '~' : $self->get_reference_sequence;
+      
+        if ( (defined $self->bound_start) && ($self->bound_start != $self->seq_region_start) ) {
+            
+            if ($self->bound_start > $self->seq_region_start) {
+                warn "Invalid bound_start for ".$self->variation_name.": ".$self->bound_start." > ".$self->seq_region_start."\n";
+                return undef;
+            }
+
+            $gff->{attributes}->{Start_range} = join ',', $self->bound_start, $self->seq_region_start;
+        }
+
+        if ( (defined $self->bound_end) && ($self->bound_end != $self->seq_region_end) ) {
+           
+            if ($self->bound_end < $self->seq_region_end) {
+                warn "Invalid bound_end for ".$self->variation_name.": ".$self->bound_end." < ".$self->seq_region_end."\n";
+                return undef;
+            }
+
+
+            $gff->{attributes}->{End_range}   = join ',', $self->seq_region_end, $self->bound_end;
+        }
+
         return $gff;
     }
     
@@ -400,7 +367,73 @@ use warnings;
     
 }
 
+{
+    package Bio::EnsEMBL::Variation::Individual;
+        
+    sub _gff_hash {
+        
+        my $self = shift;
+
+        my $gff;
+
+        $gff->{Gender} = $self->gender;
+
+        $gff->{Display_name} = $self->name;
+
+        $gff->{ensembl_description} = $self->description;
+
+        $gff->{Type} = $self->type_description;
+
+        $gff->{Population} = join ',', map { $_->name } @{ $self->get_all_Populations };
+       
+        return $gff;
+    }
+
+    sub to_gvf {
+        my $self = shift;
+       
+        my $attrs = $self->_gff_hash(@_);
+
+        # get rid of any empty attributes 
+        map { delete $attrs->{$_} unless $attrs->{$_} } keys %$attrs;
+        
+        return join ';', map { $_.'='.$attrs->{$_} } keys %$attrs; 
+    }
+    
+}
+
+{
+    package Bio::EnsEMBL::Variation::Population;
+        
+    sub _gff_hash {
+        
+        my $self = shift;
+
+        my $gff;
+
+        $gff->{Attribute} = 'Variant_freq';
+
+        $gff->{population} = $self->name;
+        
+        $gff->{population_size} = $self->size;
+
+        $gff->{Comment} = $self->description;
+      
+        return $gff;
+    }
+
+    sub to_gvf {
+        my $self = shift;
+       
+        my $attrs = $self->_gff_hash(@_);
+
+        # get rid of any empty attributes 
+        map { delete $attrs->{$_} unless $attrs->{$_} } keys %$attrs;
+        
+        return join ';', map { $_.'='.$attrs->{$_} } keys %$attrs; 
+    }
+    
+}
 
 1;
-
 

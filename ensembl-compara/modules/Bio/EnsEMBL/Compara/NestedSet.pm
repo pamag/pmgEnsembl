@@ -29,11 +29,11 @@ The rest of the documentation details each of the object methods. Internal metho
 package Bio::EnsEMBL::Compara::NestedSet;
 
 use strict;
+use warnings;
 use Bio::EnsEMBL::Utils::Exception;
 use Bio::EnsEMBL::Utils::Argument;
-
+use Bio::EnsEMBL::Compara::FormatTree;
 use Bio::TreeIO;
-
 use Bio::EnsEMBL::Compara::Graph::Node;
 our @ISA = qw(Bio::EnsEMBL::Compara::Graph::Node);
 
@@ -1093,7 +1093,7 @@ sub _internal_nhx_format {
   Description : Prints this tree in Newick format. Several modes are
                 available: full, display_label_composite, simple, species,
                 species_short_name, ncbi_taxon, ncbi_name, njtree and phylip
-  Returntype  : undef
+  Returntype  : string
   Exceptions  :
   Caller      : general
   Status      : Stable
@@ -1103,19 +1103,39 @@ sub _internal_nhx_format {
 sub newick_format {
   my $self = shift;
   my $format_mode = shift;
-  
-  $format_mode="full" unless(defined($format_mode));
-  my $newick = $self->_internal_newick_format($format_mode); 
+
+  my $newick;
+  if ($format_mode eq "ryo") {
+    my $fmt = shift @_;
+    $newick = $self->_internal_newick_format_ryo($fmt);
+  } else {
+    $format_mode="full" unless(defined($format_mode));
+    $newick = $self->_internal_newick_format($format_mode);
+  }
   $newick .= ";";
   return $newick;
 }
 
+sub _internal_newick_format_ryo {
+  my ($self,$fmt) = @_;
+  my $tree;
+  eval {
+    my $newick = Bio::EnsEMBL::Compara::FormatTree->new($fmt);
+    $tree = $newick->format_newick($self);
+  };
+  if ($@) {
+    print STDERR "Something bad happened while trying to stringify the tree: \n";
+    print STDERR "$@\n";
+    return undef;
+  }
+  return $tree;
+}
 
 sub _internal_newick_format {
   my $self = shift;
   my $format_mode = shift;
   my $newick = "";
-  
+
   if($self->get_child_count() > 0) {
     $newick .= "(";
     my $first_child=1;
@@ -1126,9 +1146,12 @@ sub _internal_newick_format {
     }
     $newick .= ")";
   }
-  
+
   if($format_mode eq "full") { 
     #full: name and distance on all nodes
+#    print "-CALLED IN: ", $newick, "\n";
+#    print "NAME: ",$self->name, "\n";
+#    print "DIST: ",$self->distance_to_parent, "\n";
     $newick .= sprintf("%s", $self->name);
     $newick .= sprintf(":%1.4f", $self->distance_to_parent);
   }
@@ -1164,6 +1187,21 @@ sub _internal_newick_format {
     my $display_label;
     if($self->is_leaf) {
       $display_label = $self->gene_member->display_label;
+    }
+    if (defined($display_label)) {
+      $newick .= $display_label . "_";
+    }
+    $newick .= $self->name;
+    if ($self->is_leaf) {
+      $newick .= "_" . $self->genome_db->short_name;
+    }
+    $newick .= sprintf(":%1.4f", $self->distance_to_parent);
+  }
+  if($format_mode eq "gene_stable_id_composite") { 
+    #display_label: external name and distance on all nodes
+    my $display_label;
+    if($self->is_leaf) {
+      $display_label = $self->gene_member->stable_id;
     }
     if (defined($display_label)) {
       $newick .= $display_label . "_";
@@ -1309,7 +1347,6 @@ sub _internal_newick_format {
       $newick .= sprintf(":%1.4f", $self->distance_to_parent);
     }
   }
-
   return $newick;
 }
 

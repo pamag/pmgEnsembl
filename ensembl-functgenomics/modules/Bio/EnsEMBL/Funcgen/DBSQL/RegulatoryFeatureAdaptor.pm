@@ -1,27 +1,10 @@
 #
 # Ensembl module for Bio::EnsEMBL::DBSQL::Funcgen::RegulatoryFeatureAdaptor
 #
-# You may distribute this module under the same terms as Perl itself
-
-=head1 NAME
-
-Bio::EnsEMBL::DBSQL::Funcgen::RegulatoryFeatureAdaptor - A database adaptor for fetching and
-storing RegulatoryFeature objects.
-
-=head1 SYNOPSIS
-
-my $afa = $db->get_RegulatoryFeatureAdaptor();
-
-my $features = $afa->fetch_all_by_Slice($slice);
-
-=head1 DESCRIPTION
-
-The RegulatoryFeatureAdaptor is a database adaptor for storing and retrieving
-RegulatoryFeature objects.
 
 =head1 LICENSE
 
-  Copyright (c) 1999-2009 The European Bioinformatics Institute and
+  Copyright (c) 1999-2011 The European Bioinformatics Institute and
   Genome Research Limited.  All rights reserved.
 
   This software is distributed under a modified Apache license.
@@ -38,11 +21,21 @@ RegulatoryFeature objects.
   <helpdesk@ensembl.org>.
 
 
-=head1 METHODS
+=head1 NAME
 
-The rest of the documentation details each of the object methods. Internal
-methods are preceded with an underscore e.g. _method
+Bio::EnsEMBL::DBSQL::Funcgen::RegulatoryFeatureAdaptor - A database adaptor for fetching and
+storing RegulatoryFeature objects.
 
+=head1 SYNOPSIS
+
+my $afa = $db->get_RegulatoryFeatureAdaptor();
+
+my $features = $afa->fetch_all_by_Slice($slice);
+
+=head1 DESCRIPTION
+
+The RegulatoryFeatureAdaptor is a database adaptor for storing and retrieving
+RegulatoryFeature objects.
 
 =cut
 
@@ -372,6 +365,7 @@ sub _objs_from_sth {
 		  $reg_feat->attribute_cache(\%reg_attrs);
 		  push @features, $reg_feat;
 
+
 		  %reg_attrs = (
 						annotated => {},
 						motif     => {},
@@ -510,42 +504,10 @@ sub _objs_from_sth {
 	  }
 	
   
-	  #populate attributes array
+	  #populate attributes cache
 	  if(defined $attr_id  && ! $skip_feature){
 
 		$reg_attrs{$attr_type}->{$attr_id} = undef;
-
-
-		### MOVE THIS TO RegualtoryFeature::regulatory_attributes
-		# This reslicing is now all done by passing the slice to fetch_all_by_dbID_list 
-		# when lazy loading
-
-		#These will all be fetched on their native slice, not necessarily the slice we have fetched this
-		#reg feature on, hence we need to map the features to the current slice
-		#otherwise the bounds may get messed up
-
-		#my $attr = $feature_adaptors{$attr_type}->fetch_by_dbID($attr_id);
-		#No $attr here means the supporting attribute features have been removed
-		#Should never happen in release DB.
-
-
-		#reset start and ends for the current slice
-		#This is not redefining the slice, so we may get minus start values
-		#grab the seq_region_start/ends here first
-		#as resetting directly causes problems
-		#my $attr_sr_start = $attr->seq_region_start;
-		#my $attr_sr_end = $attr->seq_region_end;
- 		#$attr->slice($slice);
-
-		#if($slice->strand ==1){
-		#  $attr->start($attr_sr_start - $slice->start +1);
-		#  $attr->end($attr_sr_end - $slice->start +1);	
-		#}else{
-		#  $attr->start($slice->end - $attr_sr_end +1);
-		#  $attr->end($slice->end - $attr_sr_start +1);	
-		#}
-		
-		#push @reg_attrs, $attr;
 	  }
 	}
 
@@ -651,15 +613,15 @@ sub store{
 	#Actually never happens, as we always assign stable_ids after storing
 	($sid = $rf->stable_id) =~ s/ENS[A-Z]*R0*// if defined $rf->stable_id;
 
-	$sth->bind_param(1, $seq_region_id,             SQL_INTEGER);
-	$sth->bind_param(2, $rf->start(),               SQL_INTEGER);
-	$sth->bind_param(3, $rf->end(),                 SQL_INTEGER);
-	$sth->bind_param(4, $rf->bound_start(),         SQL_INTEGER);
-	$sth->bind_param(5, $rf->bound_end(),           SQL_INTEGER);
-	$sth->bind_param(6, $rf->strand(),              SQL_TINYINT);
-	$sth->bind_param(7, $rf->{'display_label'},     SQL_VARCHAR);#Direct access so we always store the binary string
-	$sth->bind_param(8, $rf->feature_type->dbID(),  SQL_INTEGER);
-	$sth->bind_param(9, $rf->feature_set->dbID(),   SQL_INTEGER);
+	$sth->bind_param(1,  $seq_region_id,             SQL_INTEGER);
+	$sth->bind_param(2,  $rf->start(),               SQL_INTEGER);
+	$sth->bind_param(3,  $rf->end(),                 SQL_INTEGER);
+	$sth->bind_param(4,  $rf->bound_start(),         SQL_INTEGER);
+	$sth->bind_param(5,  $rf->bound_end(),           SQL_INTEGER);
+	$sth->bind_param(6,  $rf->strand(),              SQL_TINYINT);
+	$sth->bind_param(7,  $rf->{'display_label'},     SQL_VARCHAR);#Direct access so we always store the binary string
+	$sth->bind_param(8,  $rf->feature_type->dbID(),  SQL_INTEGER);
+	$sth->bind_param(9,  $rf->feature_set->dbID(),   SQL_INTEGER);
 	$sth->bind_param(10, $sid,                      SQL_INTEGER);
 	$sth->bind_param(11, $rf->binary_string,        SQL_VARCHAR);
 	$sth->bind_param(12, $rf->is_projected,         SQL_BOOLEAN);
@@ -670,13 +632,15 @@ sub store{
 
 
 	#Store regulatory_attributes
+	#Attr cache now only holds dbids not objs
+
 	my %attrs = %{$rf->attribute_cache};
 
 	foreach my $fclass(keys %attrs){
 	
-	  foreach my $feat(values %{$attrs{$fclass}}){
+	  foreach my $attr_id(keys %{$attrs{$fclass}}){
 		$sth2->bind_param(1, $rf->dbID,   SQL_INTEGER);
-		$sth2->bind_param(2, $feat->dbID, SQL_INTEGER);
+		$sth2->bind_param(2, $attr_id, SQL_INTEGER);
 		$sth2->bind_param(3, $fclass,     SQL_VARCHAR);
 		$sth2->execute();
 	  }
@@ -737,7 +701,7 @@ sub fetch_all_by_stable_ID {
 
 =head2 fetch_type_config_by_RegulatoryFeatures
 
-  Arg [1]    : 
+  Arg [1]    : Bio::EnsEMBL::Funcgen::RegulatoryFeature
   Example    : my $config = $regf_adaptor->fetch_type_config_by_RegualtoryFeature($rf);
   Description: Retrieves a config hash of CellType and FeatureType names and dbIDs supporting 
                the given RegualtoryFeature

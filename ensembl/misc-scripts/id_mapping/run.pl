@@ -1,5 +1,4 @@
 #!/software/bin/perl
-#!/usr/local/ensembl/bin/perl
 
 =head1 NAME
 
@@ -46,7 +45,7 @@ Patrick Meidl <meidl@ebi.ac.uk>, Ensembl core API team
 =head1 CONTACT
 
 Please post comments/questions to the Ensembl development list
-<ensembl-dev@ebi.ac.uk>
+<dev@ensembl.org>
 
 =cut
 

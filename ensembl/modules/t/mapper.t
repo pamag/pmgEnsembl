@@ -1,7 +1,7 @@
 ## Bioperl Test Harness Script for Modules
 ##
 # CVS Version
-# $Id: mapper.t,v 1.13 2004-07-23 09:57:20 mcvicker Exp $
+# $Id: mapper.t,v 1.14 2011-01-28 11:35:59 ak4 Exp $
 
 
 # Before `make install' is performed this script should be runnable with

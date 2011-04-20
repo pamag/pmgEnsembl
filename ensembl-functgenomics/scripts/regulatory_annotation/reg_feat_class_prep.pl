@@ -1,12 +1,28 @@
-#!/usr/local/ensembl/bin/perl
+#!/usr/bin/env perl
+
+=head1 LICENSE
+
+
+  Copyright (c) 1999-2011 The European Bioinformatics Institute and
+  Genome Research Limited.  All rights reserved.
+
+  This software is distributed under a modified Apache license.
+  For license details, please see
+
+    http://www.ensembl.org/info/about/code_licence.html
+
+=head1 CONTACT
+
+  Please email comments or questions to the public Ensembl
+  developers list at <ensembl-dev@ebi.ac.uk>.
+
+  Questions may also be sent to the Ensembl help desk at
+  <helpdesk@ensembl.org>.
+
 
 =head1 DESCRIPTION
 
 Looks at a specified func_gen database determines which cell lines need an annotation run and prints out helpful stuff for whoever is running the classification analyses.
-
-=head1 AUTHOR(S)
-
-dkeefe@ebi.ac.uk
 
 =head1 USAGE
 
@@ -25,6 +41,12 @@ mysql -u ensro -P3306 -hens-genomics2 -BN -e"select display_label from regulator
 =head1 CVS
 
  $Log: reg_feat_class_prep.pl,v $
+ Revision 1.6  2011-01-10 14:01:15  nj1
+ added generic #!/usr/bin/env perl
+
+ Revision 1.5  2011-01-10 13:32:23  nj1
+ updated boiler plate
+
  Revision 1.4  2010-09-24 09:44:26  dkeefe
  corrected sql for cell line selection properly!
 
@@ -36,8 +58,6 @@ mysql -u ensro -P3306 -hens-genomics2 -BN -e"select display_label from regulator
 
  Revision 1.1  2010-04-01 11:55:50  dkeefe
  Looks at a specified func_gen database determines which cell lines need an annotation run and prints out helpful stuff for whoever is running the classification analyses.
-
-
 
 
 =cut

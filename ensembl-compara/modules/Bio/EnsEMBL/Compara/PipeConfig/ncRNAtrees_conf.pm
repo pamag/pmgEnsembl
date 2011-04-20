@@ -7,17 +7,44 @@
 
 =head1 SYNOPSIS
 
-    init_pipeline.pl Bio::EnsEMBL::Compara::PipeConfig::ncRNAtrees_conf -password <your_password>
+    #1. update ensembl-hive, ensembl and ensembl-compara CVS repositories before each new release
+
+    #2. you may need to update 'schema_version' in meta table to the current release number in ensembl-hive/sql/tables.sql
+
+    #3. make sure that all default_options are set correctly
+
+    #4. Run init_pipeline.pl script:
+        init_pipeline.pl Bio::EnsEMBL::Compara::PipeConfig::ncRNAtrees_conf -password <your_password> -mlss_id <your_current_NCT_mlss_id>
+
+    #5. Sync and loop the beekeeperi.pl as shown in init_pipeline.pl's output
 
 =head1 DESCRIPTION  
 
-    This is an experimental PipeConfig file for ncRNAtrees pipeline (work in progress)
+    The PipeConfig file for ncRNAtrees pipeline that should automate most of the pre-execution tasks.
+
+    Some statistics of previous releases:
+
+=head2 rel.62 stats
+
+    sequences to cluster:       191,777           [ SELECT count(*) from sequence; ]
+    total running time:         5 days            [ SELECT (UNIX_TIMESTAMP(max(died))-UNIX_TIMESTAMP(min(born)))/3600/24 FROM hive;  ]
+
+=head2 rel.61 stats
+
+    sequences to cluster:       182,051           [ SELECT count(*) from sequence; ]
+    total running time:         7 days            [ SELECT (UNIX_TIMESTAMP(max(died))-UNIX_TIMESTAMP(min(born)))/3600/24 FROM hive;  ]
+
+=head2 rel.60 stats
+
+    sequences to cluster:       172,250           [ SELECT count(*) from sequence; ]
+    total running time:         7.5 days          [ SELECT (UNIX_TIMESTAMP(max(died))-UNIX_TIMESTAMP(min(born)))/3600/24 FROM hive;  ]
 
 =head1 CONTACT
 
   Please contact ehive-users@ebi.ac.uk mailing list with questions/suggestions.
 
 =cut
+
 
 package Bio::EnsEMBL::Compara::PipeConfig::ncRNAtrees_conf;
 
@@ -30,15 +57,18 @@ sub default_options {
     return {
         %{$self->SUPER::default_options},
 
-        'mlss_id'           => 40066,
+        # 'mlss_id'           => 40072,   # 40072 was good for release 62, but make sure you have the correct id!
         'max_gene_count'    => 1500,
 
-        'release'           => '60',
-        'rel_suffix'        => 'c',    # an empty string by default, a letter otherwise
+        'release'           => '62',
+        'rel_suffix'        => 'a',    # an empty string by default, a letter otherwise
         'rel_with_suffix'   => $self->o('release').$self->o('rel_suffix'),
 
+        'pipeline_name'     => 'NCT_'.$self->o('rel_with_suffix'),  # name the pipeline to differentiate the submitted processes
+
+        'species_tree_input_file'   => '',  # empty value means 'create using genome_db+ncbi_taxonomy information'; can be overriden by a file with a tree in it
+
         'ensembl_cvs_root_dir' => $ENV{'HOME'}.'/work',     # some Compara developers might prefer $ENV{'HOME'}.'/ensembl_main'
-        'work_dir'             => $ENV{'HOME'}.'/ncrna_trees_'.$self->o('rel_with_suffix'),
 
         'email'             => $ENV{'USER'}.'@ebi.ac.uk',    # NB: your EBI address may differ from the Sanger one!
 
@@ -77,7 +107,7 @@ sub default_options {
             -port   => 3306,
             -user   => 'ensro',
             -pass   => '',
-            -dbname => 'kb3_ensembl_compara_60',
+            -dbname => 'sf5_ensembl_compara_61',
         },
     };
 }
@@ -86,20 +116,12 @@ sub default_options {
 sub pipeline_wide_parameters {  # these parameter values are visible to all analyses, can be overridden by parameters{} and input_id{}
     my ($self) = @_;
     return {
-        'pipeline_name'     => 'NCT_'.$self->o('rel_with_suffix'),  # name the pipeline to differentiate the submitted processes
-        'email'             => $self->o('email'),                   # for automatic notifications (may be unsupported by your Meadows)
-        'work_dir'          => $self->o('work_dir'),                # data directories and filenames
+        %{$self->SUPER::pipeline_wide_parameters},          # here we inherit anything from the base class
+
+        'email'             => $self->o('email'),           # for (future) automatic notifications (may be unsupported by your Meadows)
     };
 }
 
-sub pipeline_create_commands {
-    my ($self) = @_;
-    return [
-        @{$self->SUPER::pipeline_create_commands},  # here we inherit creation of database, hive tables and compara tables
-        
-        'mkdir -p '.$self->o('work_dir'),
-    ];
-}
 
 
 sub pipeline_analyses {
@@ -168,6 +190,7 @@ sub pipeline_analyses {
             -parameters    => {
                 'sql'         => "ALTER TABLE #table_name# ENGINE=InnoDB",
             },
+            -can_be_empty  => 1,
             -hive_capacity => 10,
         },
 
@@ -179,10 +202,10 @@ sub pipeline_analyses {
                 'compara_db'    => $self->o('master_db'),   # that's where genome_db_ids come from
                 'mlss_id'       => $self->o('mlss_id'),
             },
-            -wait_for  => [ 'innodbise_table_factory', 'innodbise_table' ],
+            -wait_for  => [ 'innodbise_table_factory', 'innodbise_table' ],     # have to wait for both, because 'innodbise_table' can_be_empty
             -flow_into => {
                 2 => [ 'load_genomedb' ],
-                1 => [ 'create_species_tree', 'create_lca_species_set', 'load_rfam_models' ],
+                1 => [ 'make_species_tree', 'create_lca_species_set', 'load_rfam_models' ],
             },
         },
 
@@ -199,30 +222,17 @@ sub pipeline_analyses {
 
 # ---------------------------------------------[load species tree]-------------------------------------------------------------------
 
-        {   -logic_name    => 'create_species_tree',
-            -module        => 'Bio::EnsEMBL::Hive::RunnableDB::SystemCmd',
+        {   -logic_name    => 'make_species_tree',
+            -module        => 'Bio::EnsEMBL::Compara::RunnableDB::MakeSpeciesTree',
             -parameters    => {
-                'db_url'   => $self->dbconn_2_url('pipeline_db'),
-                'species_tree_file' => $self->o('work_dir').'/nctree_spec_tax.nh',
-                'cmd'      => $self->o('ensembl_cvs_root_dir').'/ensembl-compara/scripts/tree/testTaxonTree.pl -url #db_url# -create_species_tree -multifurcation_deletes_node 33316_129949_314146 -multifurcation_deletes_all_subnodes 9347_186625_32561 -njtree_output_filename #species_tree_file# -no_other_files 2>/dev/null',
+                'species_tree_input_file' => $self->o('species_tree_input_file'),   # empty by default, but if nonempty this file will be used instead of tree generation from genome_db
+                'multifurcation_deletes_node'           => [ 33316, 129949, 314146 ],
+                'multifurcation_deletes_all_subnodes'   => [  9347, 186625,  32561 ],
             },
             -wait_for => [ 'load_genomedb_factory', 'load_genomedb' ],  # have to wait for both to complete (so is a funnel)
             -hive_capacity => -1,   # to allow for parallelization
-            -flow_into => {
-                1 => { 'store_species_tree' => { 'species_tree_file' => '#species_tree_file#' } },
-            },
-        },
-
-        {   -logic_name    => 'store_species_tree',
-            -module        => 'Bio::EnsEMBL::Hive::RunnableDB::JobFactory',     # a non-standard use of JobFactory for iterative insertion
-            -parameters => {
-                'inputcmd'        => 'cat #species_tree_file#',
-                'input_id'        => { 'node_id' => 1, 'tag' => 'species_tree_string', 'value' => '#_range_start#' },
-                'fan_branch_code' => 3,
-            },
-            -hive_capacity => -1,   # to allow for parallelization
-            -flow_into => {
-                3 => [ 'mysql:////nc_tree_tag' ],
+            -flow_into  => {
+                3 => { 'mysql:////nc_tree_tag' => { 'node_id' => 1, 'tag' => 'species_tree_string', 'value' => '#species_tree_string#' } },
             },
         },
 
@@ -294,7 +304,7 @@ sub pipeline_analyses {
             -parameters    => {
                 'mlss_id'        => $self->o('mlss_id'),
             },
-            -wait_for => [ 'create_species_tree', 'store_species_tree', 'create_lca_species_set', 'store_lca_species_set', 'load_members_factory', 'load_members' ], # mega-funnel
+            -wait_for => [ 'make_species_tree', 'create_lca_species_set', 'store_lca_species_set', 'load_members_factory', 'load_members' ], # mega-funnel
             -flow_into => {
                 2 => [ 'recover_epo' ],
             },

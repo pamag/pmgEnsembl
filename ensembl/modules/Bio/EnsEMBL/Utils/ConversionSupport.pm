@@ -1,6 +1,6 @@
 =head1 LICENSE
 
-  Copyright (c) 1999-2010 The European Bioinformatics Institute and
+  Copyright (c) 1999-2011 The European Bioinformatics Institute and
   Genome Research Limited.  All rights reserved.
 
   This software is distributed under a modified Apache license.
@@ -118,7 +118,9 @@ sub parse_common_options {
 	       'pass|dbpass|db_pass=s',
 	       'conffile|conf=s',
 	       'logfile|log=s',
+         'nolog|nolog=s',
 	       'logpath=s',
+         'log_base_path=s',
 	       'logappend|log_append=s',
 	       'verbose|v=s',
 	       'interactive|i=s',
@@ -155,8 +157,24 @@ sub parse_common_options {
     warning("Unable to open configuration file $conffile for reading: $!");
   }
 
-  # override configured parameter with commandline options
+# override configured parameter with commandline options
   map { $self->param($_, $h{$_}) } keys %h;
+
+  # if logpath & logfile are not se, set them here to /ensemblweb/vega_dev/shared/logs/conversion/DBNAME/SCRIPNAME_NN.log
+
+  if (defined($self->param('log_base_path')))  {
+    if (not (defined($self->param('logpath')))){
+      $self->param('logpath', $self->param('log_base_path')."/".$self->param('dbname')."/" );
+    }
+    if (  (not defined $self->param('logfile') ) && (not defined $self->param('nolog') )  ){
+      my $log = $Script;
+      $log =~ s/.pl//g;
+      my $counter;
+      for ($counter=1 ; (-e $self->param('logpath')."/".$log."_".sprintf("%03d", $counter).".log"); $counter++){ warn  $self->param('logpath')."/".$log."_".$counter.".log";}
+      $self->param('logfile', $log."_".sprintf("%03d", $counter).".log");
+    }
+  }
+  
   return(1);
 }
 
@@ -234,7 +252,9 @@ sub get_common_params {
 	    port
 	    user
 	    pass
+      nolog
 	    logpath
+      log_base_path
 	    logfile
 	    logappend
 	    verbose

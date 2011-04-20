@@ -35,6 +35,7 @@ if (!defined(caller())) {
 
 # --------------------------------------------------------------------------------
 
+
 sub run {
 
   my $self = shift if (defined(caller(1)));
@@ -167,11 +168,7 @@ sub create_xrefs {
   my $num_sptr_pred = 0;
 
   my %dependent_sources = $self->get_dependent_xref_sources(); # name-id hash
-
-# get from HGNC file
-#  if(defined($dependent_sources{'HGNC'})){
-#    $dependent_sources{'HGNC'} = XrefParser::BaseParser->get_source_id_for_source_name("HGNC","uniprot");
-#  }	
+  my %GeneNameSynonym;
 
   if(defined($dependent_sources{'MGI'})){
     $dependent_sources{'MGI'} = XrefParser::BaseParser->get_source_id_for_source_name("MGI","uniprot");
@@ -293,7 +290,10 @@ sub create_xrefs {
     foreach my $line (@all_lines) {
       my ($accessions_only) = $line =~ /^AC\s+(.+)/;
       push(@accessions, (split /;\s*/, $accessions_only)) if ($accessions_only);
+
     }
+
+
 
     $xref->{INFO_TYPE} = "SEQUENCE_MATCH";
     $xref->{ACCESSION} = $accessions[0];
@@ -349,64 +349,13 @@ sub create_xrefs {
     # extract ^DE lines only & build cumulative description string
     my $description = " ";
     my $name        = "";
-    my $flags       = " ";
-
-    my $mode = "";
+    my $sub_description = "";
 
     foreach my $line (@all_lines) {
 
       next if(!($line =~ /^DE/));
 
-
-      # Set up the mode first
-      if($line =~ /^DE   RecName:/){
-	if($mode eq "RecName"){
-	  $description .= ";";
-	}	
-        $mode = "RecName";
-      }
-      elsif($line =~ /^DE   SubName:/){
-	if($mode eq "RecName"){
-	  $description .= ";";
-	}	
-        $mode = "RecName";
-      }
-      elsif($line =~ /^DE   AltName:/){
-        $mode = "AltName";
-      }
-      elsif($line =~ /^DE   Contains:/){
-	if($mode eq "Contains"){
-	  $description .= ";";
-	}
-        elsif($mode eq "Includes"){
-          $description .= "][Contains ";
-        }
-	else{
-          $description .= " [Contains ";
-        }	
-        $mode = "Contains";
-        next;
-      }
-      elsif($line =~ /^DE   Includes:/){
-	if($mode eq "Includes"){
-	  $description .= ";";
-	}	
-        elsif($mode eq "Contains"){
-          $description .= "][Includess";
-        }
-	else{
-          $description .= " [Includes ";
-        }	
-        $mode = "Includes";
-        next;
-      }
-      elsif($line =~ /^DE   Flags: (.*);/){
-        $flags .= "$1 ";
-        next;
-      }
-
-
-      # now get the data
+      # get the data
       if($line =~ /^DE   RecName: Full=(.*);/){
         $name .= $1;
       }
@@ -416,40 +365,19 @@ sub create_xrefs {
       elsif($line =~ /SubName: Full=(.*);/){
         $name .= $1;
       }
-      elsif($line =~ /AltName: Full=(.*);/){
-        $description .= "(".$1.")";        
-      }
-      elsif($line =~ /Short=(.*);/){
-        $description .= "(".$1.")";        
-      }
-      elsif($line =~ /EC=(.*);/){
-        $description .= "(EC ".$1.")";        
-      }
-      elsif($line =~ /Allergen=(.*);/){
-        $description .= "(Allergen ".$1.")";        
-      }
-      elsif($line =~ /INN=(.*);/){
-        $description .= "(".$1.")";        
-      }
-      elsif($line =~ /Biotech=(.*);/){
-        $description .= "(".$1.")";        
-      }
-      elsif($line =~ /CD_antigen=(.*);/){
-        $description .= "(".$1." antigen)";        
-      }
-      else{
-         print STDERR "unable to process *$line* for $acc\n";
-      }
 
+
+      $description =~ s/^\s*//g;
+      $description =~ s/\s*$//g;
+
+      
+      my $desc = $name.$description;
+      if(!length($desc)){
+	$desc = $sub_description;
+      }
+      $desc =~ s/\(\s*EC\s*\S*\)//g;
+      $xref->{DESCRIPTION} = $desc;
     }
-    if($mode eq "Contains" or $mode eq "Includes"){
-      $description .= "]";
-    }
-
-    $description =~ s/^\s*//g;
-    $description =~ s/\s*$//g;
-
-    $xref->{DESCRIPTION} = $name.$flags.$description;
 
     # extract sequence
     my ($seq) = $_ =~ /SQ\s+(.+)/s; # /s allows . to match newline
@@ -464,6 +392,42 @@ sub create_xrefs {
 
     $xref->{SEQUENCE} = $parsed_seq;
     #print "Adding " . $xref->{ACCESSION} . " " . $xref->{LABEL} ."\n";
+
+    
+    my ($gns) = $_ =~ /(GN\s+Name.+)/; # /s allows . to match newline
+    my @gn_lines = ();
+    if ( defined $gns ) { @gn_lines = split /\n/, $gns }
+  
+    foreach my $gn (@gn_lines){
+      my $gene_name = undef;
+      my %depe;
+      
+      if($gn =~ /Name=(\S+);/){
+	$depe{LABEL} = uc($1);
+	$depe{ACCESSION} = $xref->{ACCESSION};
+	$gene_name = $depe{ACCESSION};
+
+	$depe{SOURCE_NAME} = "Uniprot_genename";
+	$depe{SOURCE_ID} = $dependent_sources{"Uniprot_genename"};
+	$depe{LINKAGE_SOURCE_ID} = $xref->{SOURCE_ID};
+	push @{$xref->{DEPENDENT_XREFS}}, \%depe;
+	$dependent_xrefs{"Uniprot_genename"}++;
+	my @syn;
+	if($gn =~ /Synonyms=([^;]+);/){
+	  my $syn = $1;
+ 	  $syn =~ s/\s+//g;
+	  @syn= split(/,/,$syn);
+	  foreach my $ent (@syn){
+	    $GeneNameSynonym{$gene_name}{uc($ent)} = 1;
+#	    print "$gene_name\t$ent\n";
+	  }
+	}
+      }
+    }	
+
+    my ($deps) = $_ =~ /(DR\s+.+)/s; # /s allows . to match newline
+    my @dep_lines = ();
+    if ( defined $deps ) { @dep_lines = split /\n/, $deps }
 
     # dependent xrefs - only store those that are from sources listed in the source table
     my ($deps) = $_ =~ /(DR\s+.+)/s; # /s allows . to match newline
@@ -607,10 +571,30 @@ sub create_xrefs {
   print "Read $num_sp SwissProt xrefs and $num_sptr SPTrEMBL xrefs from $file\n" if($verbose);
   print "Found $num_sp_pred predicted SwissProt xrefs and $num_sptr_pred predicted SPTrEMBL xrefs\n" if (($num_sp_pred > 0 || $num_sptr_pred > 0) and $verbose);
 
+
+#  my $kount=0;
+  my $genename_source_id =  $dependent_sources{"Uniprot_genename"};
+  foreach my $namekey (keys %GeneNameSynonym){
+    #add xref
+    my $xref_id = $self->add_xref($namekey,"",$namekey, "", $genename_source_id, $species_id,"DEPENDENT");
+#    $kount++;
+#    print $namekey."\t";
+    foreach my $synkey (keys %{$GeneNameSynonym{$namekey}}){
+      #add synonyms for xref
+      $self->add_synonym($xref_id, $synkey);
+#      print "$synkey, ";
+    }
+#    print "\n";
+  }
+
+
+#  print "$kount gene anmes added\n";
+
   print "Added the following dependent xrefs:-\n" if($verbose);
   foreach my $key (keys %dependent_xrefs){
     print $key."\t".$dependent_xrefs{$key}."\n" if($verbose);
   }
+
 
   return \@xrefs;
 

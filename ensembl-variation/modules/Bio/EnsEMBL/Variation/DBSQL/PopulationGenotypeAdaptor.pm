@@ -1,3 +1,23 @@
+=head1 LICENSE
+
+ Copyright (c) 1999-2011 The European Bioinformatics Institute and
+ Genome Research Limited.  All rights reserved.
+
+ This software is distributed under a modified Apache license.
+ For license details, please see
+
+   http://www.ensembl.org/info/about/code_licence.html
+
+=head1 CONTACT
+
+ Please email comments or questions to the public Ensembl
+ developers list at <dev@ensembl.org>.
+
+ Questions may also be sent to the Ensembl help desk at
+ <helpdesk@ensembl.org>.
+
+=cut
+
 #
 # Ensembl module for Bio::EnsEMBL::Variation::DBSQL::PopulationGenotypeAdaptor
 #
@@ -42,12 +62,6 @@ This adaptor provides database connectivity for PopulationGenotype objects.
 PopulationGenotypes may be retrieved from the Ensembl variation database by
 several means using this module.
 
-=head1 AUTHOR - Graham McVicker
-
-=head1 CONTACT
-
-Post questions to the Ensembl development list ensembl-dev@ebi.ac.uk
-
 =head1 METHODS
 
 =cut
@@ -87,7 +101,7 @@ sub fetch_by_dbID {
   if (! $dbID){
       throw('no dbID argument provided');
   }
-  return shift @{$self->generic_fetch("population_genotype_id = " . $dbID)};
+  return shift @{$self->generic_fetch("pg.population_genotype_id = " . $dbID)};
 
 }
 
@@ -121,7 +135,12 @@ sub fetch_all_by_Population {
     return [];
   }
 
-  return $self->generic_fetch("sample_id = " . $pop->dbID());
+  my $constraint = "pg.sample_id = " . $pop->dbID();
+  
+  # Add the constraint for failed variations
+  $constraint .= " AND " . $self->db->_exclude_failed_variations_constraint();
+    
+  return $self->generic_fetch($constraint);
 }
 
 
@@ -154,11 +173,34 @@ sub fetch_all_by_Variation {
 	return [];
     }
 
-    return $self->generic_fetch("variation_id = " . $variation->dbID());
+    return $self->generic_fetch("pg.variation_id = " . $variation->dbID());
 
 }
 
-sub _tables{return ['population_genotype','pg']}
+=head2 fetch_all
+
+  Description: Retrieves a list of all population genotypes.
+  Returntype : listref Bio::EnsEMBL::Variation::PopulationGenotype 
+  Exceptions : throw on bad argument
+  Caller     : general
+  Status     : At Risk
+
+=cut
+
+
+sub fetch_all {
+    my $self = shift;
+
+    # Add the constraint for failed variations
+    my $constraint = $self->db->_exclude_failed_variations_constraint();
+    
+    return $self->generic_fetch($constraint);
+}
+
+sub _tables{return (['population_genotype','pg'],['failed_variation','fv'])}
+
+#ÊAdd a left join to the failed_variation table
+sub _left_join { return ([ 'failed_variation', 'fv.variation_id = pg.variation_id']); }
 
 sub _columns{
     return qw(pg.population_genotype_id pg.variation_id pg.subsnp_id pg.sample_id pg.allele_1 pg.allele_2 pg.frequency pg.count)
@@ -169,12 +211,16 @@ sub _objs_from_sth{
     my $sth = shift;
 
     my @results;
-    my ($dbID, $variation_id, $ss_id, $sample_id, $allele_1, $allele_2, $frequency, $count);
+    my ($dbID, $variation_id, $ss_id, $sample_id, $allele_1, $allele_2, $frequency, $count, $last_dbID);
     $sth->bind_columns(\$dbID, \$variation_id, \$ss_id, \$sample_id, \$allele_1, \$allele_2, \$frequency, \$count);
     
     my %population_hash;
     my %variation_hash;
     while($sth->fetch()){
+      
+      next if (defined($last_dbID) && $last_dbID == $dbID);
+      $last_dbID = $dbID;
+      
 		my $pgtype = Bio::EnsEMBL::Variation::PopulationGenotype->new
 			(-dbID => $dbID,
 			-adaptor => $self,

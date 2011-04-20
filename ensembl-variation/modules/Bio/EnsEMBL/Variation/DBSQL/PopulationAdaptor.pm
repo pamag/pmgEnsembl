@@ -1,3 +1,23 @@
+=head1 LICENSE
+
+ Copyright (c) 1999-2011 The European Bioinformatics Institute and
+ Genome Research Limited.  All rights reserved.
+
+ This software is distributed under a modified Apache license.
+ For license details, please see
+
+   http://www.ensembl.org/info/about/code_licence.html
+
+=head1 CONTACT
+
+ Please email comments or questions to the public Ensembl
+ developers list at <dev@ensembl.org>.
+
+ Questions may also be sent to the Ensembl help desk at
+ <helpdesk@ensembl.org>.
+
+=cut
+
 #
 # Ensembl module for Bio::EnsEMBL::Variation::DBSQL::PopulationAdaptor
 #
@@ -40,12 +60,6 @@ Bio::EnsEMBL::Variation::DBSQL::PopulationAdaptor
 This adaptor provides database connectivity for Population objects.
 Populations may be retrieved from the Ensembl variation database by
 several means using this module.
-
-=head1 AUTHOR - Graham McVicker
-
-=head1 CONTACT
-
-Post questions to the Ensembl development list ensembl-dev@ebi.ac.uk
 
 =head1 METHODS
 
@@ -125,6 +139,46 @@ sub fetch_by_name {
   return undef if(!@$result);
 
   return $result->[0];
+}
+
+=head2 fetch_all_by_dbID_list
+
+  Arg [1]    : listref $list
+  Example    : $pops = $pop_adaptor->fetch_all_by_dbID_list([907,1132]);
+  Description: Retrieves a listref of population objects via a list of internal
+               dbID identifiers
+  Returntype : listref of Bio::EnsEMBL::Variation::Population objects
+  Exceptions : throw if list argument is not defined
+  Caller     : general
+  Status     : At Risk
+
+=cut
+
+sub fetch_all_by_dbID_list {
+  my $self = shift;
+  my $list = shift;
+
+  if(!defined($list) || ref($list) ne 'ARRAY') {
+    throw("list reference argument is required");
+  }
+  
+  return [] unless scalar @$list >= 1;
+  
+  my $id_str = (@$list > 1)  ? " IN (".join(',',@$list).")"   :   ' = \''.$list->[0].'\'';
+
+  my $sth = $self->prepare(qq{SELECT p.sample_id, s.name, s.size, s.description
+                             FROM   population p, sample s
+                             WHERE  s.sample_id $id_str
+			     AND    s.sample_id = p.sample_id});
+  $sth->execute();
+
+  my $result = $self->_objs_from_sth($sth);
+
+  $sth->finish();
+
+  return undef if(!@$result);
+
+  return $result;
 }
 
 
@@ -447,6 +501,7 @@ sub _objs_from_sth {
   $sth->bind_columns(\$pop_id, \$name, \$size, \$desc);
 
   while($sth->fetch()) {
+	
     push @pops, Bio::EnsEMBL::Variation::Population->new
       (-dbID => $pop_id,
        -ADAPTOR => $self,

@@ -45,14 +45,24 @@ sub sam_open {
 sub bam_open {
   my $self = shift;
 
-  $self->{_cache}->{_bam_handle} ||= Bio::DB::Bam->open($self->url);
+  if (!$self->{_cache}->{_bam_handle}) {
+    if (Bio::DB::Bam->can('set_udc_defaults')) {
+      Bio::DB::Bam->set_udc_defaults;
+    }
+    $self->{_cache}->{_bam_handle} = Bio::DB::Bam->open($self->url);
+  }
   return $self->{_cache}->{_bam_handle};
 }
 
 sub bam_index {
   my $self = shift;
 
-  $self->{_cache}->{_bam_index} ||= Bio::DB::Bam->index($self->url);
+  if (!$self->{_cache}->{_bam_index}) {
+    if (Bio::DB::Bam->can('set_udc_defaults')) {
+      Bio::DB::Bam->set_udc_defaults;
+    }
+    $self->{_cache}->{_bam_index} = Bio::DB::Bam->index($self->url);
+  }
   return $self->{_cache}->{_bam_index};
 }
 

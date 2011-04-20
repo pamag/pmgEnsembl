@@ -1,6 +1,6 @@
 =head1 LICENSE
 
-  Copyright (c) 1999-2010 The European Bioinformatics Institute and
+  Copyright (c) 1999-2011 The European Bioinformatics Institute and
   Genome Research Limited.  All rights reserved.
 
   This software is distributed under a modified Apache license.
@@ -181,18 +181,28 @@ sub new {
 
 =head2 get_all_DBLinks
 
-  Arg [1]    : (optional) String, external database name
-  Arg [2]    : (optional) String, external database type
-  Example    : my @dblinks = @{ $transcript->get_all_DBLinks() };
-  Description: Retrieves _all_ related DBEntries for this transcript.  
-               This includes all DBEntries that are associated with the
-               corresponding translation.
+  Arg [1]    : String database name (optional)
+               SQL wildcard characters (_ and %) can be used to
+               specify patterns.
 
-               If you only want to retrieve the DBEntries associated with the
-               transcript then you should use the get_all_DBEntries call 
-               instead.
-  Returntype : Listref of Bio::EnsEMBL::DBEntry objects, sorted by
-               priority (desc), external db name (asc), display_id (asc)
+  Example    : my @dblinks = @{ $transcript->get_all_DBLinks() };
+               my @dblinks = @{ $transcript->get_all_DBLinks('Uniprot%') };
+
+  Description: Retrieves *all* related DBEntries for this
+               transcript.  This includes all DBEntries that are
+               associated with the corresponding translation.
+
+               If you only want to retrieve the DBEntries associated
+               with the transcript (and not the translation) then
+               you should use the get_all_DBEntries() call instead.
+
+               Note: Each entry may be listed more than once.  No
+               uniqueness checks are done.  Also if you put in an
+               incorrect external database name no checks are done
+               to see if this exists, you will just get an empty
+               list.
+
+  Return type: Listref of Bio::EnsEMBL::DBEntry objects
   Exceptions : none
   Caller     : general
   Status     : Stable
@@ -200,17 +210,16 @@ sub new {
 =cut
 
 sub get_all_DBLinks {
-  my ( $self, $ex_db_exp, $ex_db_type ) = @_;
+  my ( $self, $db_name_exp, $ex_db_type ) = @_;
 
-  my @links;
+  my @links =
+    @{ $self->get_all_DBEntries( $db_name_exp, $ex_db_type ) };
 
-  push( @links,
-        @{ $self->get_all_DBEntries( $ex_db_exp, $ex_db_type ) } );
-
+  # Add all of the transcript and translation xrefs to the return list.
   my $translation = $self->translation();
   if ( defined($translation) ) {
     push( @links,
-          @{$translation->get_all_DBEntries( $ex_db_exp, $ex_db_type ) }
+          @{$translation->get_all_DBEntries( $db_name_exp, $ex_db_type ) }
     );
   }
 
@@ -219,20 +228,61 @@ sub get_all_DBLinks {
   return \@links;
 }
 
+=head2 get_all_xrefs
+
+  Arg [1]    : String database name (optional)
+               SQL wildcard characters (_ and %) can be used to
+               specify patterns.
+
+  Example    : @xrefs = @{ $transcript->get_all_xrefs() };
+               @xrefs = @{ $transcript->get_all_xrefs('Uniprot%') };
+
+  Description: Retrieves *all* related xrefs for this transcript.
+               This includes all xrefs that are associated with the
+               corresponding translation of this transcript.
+
+               If you want to retrieve the xrefs associated with
+               only the transcript (and not the translation) then
+               you should use the get_all_object_xrefs() method
+               instead.
+
+               Note: Each entry may be listed more than once.  No
+               uniqueness checks are done.  Also if you put in an
+               incorrect external database name no checks are done
+               to see if this exists, you will just get an empty
+               list.
+
+                NB: This method is an alias for the
+                    get_all_DBLinks() method.
+
+  Return type: Listref of Bio::EnsEMBL::DBEntry objects
+
+  Status     : Stable
+
+=cut
+
+sub get_all_xrefs {
+  my $self = shift;
+  return $self->get_all_DBLinks(@_);
+}
 
 =head2 get_all_DBEntries
 
   Arg [1]    : (optional) String, external database name
-  Arg [2]    : (optional) String, external database type
-  Example    : my @dbentries = @{ $gene->get_all_DBEntries() };
-  Description: Retrieves DBEntries (xrefs) for this transcript.  
-               This does _not_ include the corresponding translations 
-               DBEntries (see get_all_DBLinks).
 
-               This method will attempt to lazy-load DBEntries from a
-               database if an adaptor is available and no DBEntries are present
-               on the transcript (i.e. they have not already been added or 
-               loaded).
+  Arg [2]    : (optional) String, external database type
+
+  Example    : my @dbentries = @{ $gene->get_all_DBEntries() };
+
+  Description: Retrieves DBEntries (xrefs) for this transcript.
+               This does *not* include the corresponding
+               translations DBEntries (see get_all_DBLinks()).
+
+               This method will attempt to lazy-load DBEntries
+               from a database if an adaptor is available and no
+               DBEntries are present on the transcript (i.e. they
+               have not already been added or loaded).
+
   Returntype : Listref of Bio::EnsEMBL::DBEntry objects
   Exceptions : none
   Caller     : get_all_DBLinks, TranscriptAdaptor::store
@@ -243,27 +293,60 @@ sub get_all_DBLinks {
 sub get_all_DBEntries {
   my ( $self, $ex_db_exp, $ex_db_type ) = @_;
 
-  my $cache_name = "dbentries";
+  my $cache_name = 'dbentries';
 
   if ( defined($ex_db_exp) ) {
     $cache_name .= $ex_db_exp;
   }
+
   if ( defined($ex_db_type) ) {
     $cache_name .= $ex_db_type;
   }
 
-  # if not cached, retrieve all of the xrefs for this gene
-  if ( !defined $self->{$cache_name} && $self->adaptor() ) {
+  # if not cached, retrieve all of the xrefs for this transcript
+  if ( !defined( $self->{$cache_name} ) && defined( $self->adaptor() ) )
+  {
     $self->{$cache_name} =
-      $self->adaptor->db->get_DBEntryAdaptor->fetch_all_by_Transcript(
-                                       $self, $ex_db_exp, $ex_db_type );
+      $self->adaptor()->db()->get_DBEntryAdaptor()
+      ->fetch_all_by_Transcript( $self, $ex_db_exp, $ex_db_type );
   }
 
   $self->{$cache_name} ||= [];
 
   return $self->{$cache_name};
-}
+} ## end sub get_all_DBEntries
 
+=head2 get_all_object_xrefs
+
+  Arg [1]    : (optional) String, external database name
+
+  Arg [2]    : (optional) String, external_db type
+
+  Example    : @oxrefs = @{ $transcript->get_all_object_xrefs() };
+
+  Description: Retrieves xrefs for this transcript.  This does
+               *not* include xrefs that are associated with the
+               corresponding translations of this transcript (see
+               get_all_xrefs()).
+
+               This method will attempt to lazy-load xrefs from a
+               database if an adaptor is available and no xrefs are
+               present on the transcript (i.e. they have not already
+               been added or loaded).
+
+                NB: This method is an alias for the
+                    get_all_DBentries() method.
+
+  Return type: Listref of Bio::EnsEMBL::DBEntry objects
+
+  Status     : Stable
+
+=cut
+
+sub get_all_object_xrefs {
+  my $self = shift;
+  return $self->get_all_DBEntries(@_);
+}
 
 =head2 add_DBEntry
 
@@ -1189,78 +1272,109 @@ sub add_Attributes {
 
 =cut
 
-sub add_Exon{
-  my ($self,$exon, $rank) = @_;
+sub add_Exon {
+  my ( $self, $exon, $rank ) = @_;
 
-  #yup - we are going to be picky here...
-  unless(defined $exon && ref $exon && $exon->isa("Bio::EnsEMBL::Exon") ) {
-    throw("[$exon] is not a Bio::EnsEMBL::Exon!");
-  }
+  assert_ref( $exon, 'Bio::EnsEMBL::Exon' );
 
   $self->{'_trans_exon_array'} ||= [];
 
-  if(defined($rank)) {
-    $self->{'_trans_exon_array'}->[$rank-1] = $exon;
+  if ( defined($rank) ) {
+    $self->{'_trans_exon_array'}->[ $rank - 1 ] = $exon;
     return;
   }
 
   my $was_added = 0;
 
   my $ea = $self->{'_trans_exon_array'};
-  if( @$ea ) {
-    if( $exon->strand() == 1 ) {
-      if( $exon->start() > $ea->[$#$ea]->end() ) {
-        push(@{$self->{'_trans_exon_array'}},$exon);
+
+  if ( @{$ea} ) {
+    if ( $exon->strand() == 1 ) {
+
+      my $exon_start = $exon->start();
+
+      if ( $exon_start > $ea->[-1]->end() ) {
+        push( @{$ea}, $exon );
         $was_added = 1;
       } else {
-        # insert it at correct place
-        for( my $i=0; $i <= $#$ea; $i++ ) {
-          if( $exon->end() < $ea->[$i]->start() ) {
-            splice( @$ea, $i, 0, $exon );
+        # Insert it at correct place
+
+        my $i = 0;
+        foreach my $e ( @{$ea} ) {
+          if ( $exon_start < $e->start() ) {
+            if ( $exon->end() >= $e->start() ) {
+              # Overlap
+              last;
+            }
+            splice( @{$ea}, $i, 0, $exon );
             $was_added = 1;
             last;
           }
+          ++$i;
         }
+
       }
+
     } else {
-      if( $exon->end() < $ea->[$#$ea]->start() ) {
-        push(@{$self->{'_trans_exon_array'}},$exon);
+
+      my $exon_end = $exon->end();
+
+      if ( $exon_end < $ea->[-1]->start() ) {
+        push( @{$ea}, $exon );
         $was_added = 1;
       } else {
-        # insert it at correct place
-        for( my $i=0; $i <= $#$ea; $i++ ) {
-          if( $exon->start() > $ea->[$i]->end() ) {
-            splice( @$ea, $i, 0, $exon );
+        # Insert it at correct place
+
+        my $i = 0;
+        foreach my $e ( @{$ea} ) {
+          if ( $exon_end > $e->end() ) {
+            if ( $exon->start() <= $e->end() ) {
+              # Overlap
+              last;
+            }
+            splice( @{$ea}, $i, 0, $exon );
             $was_added = 1;
             last;
           }
+          ++$i;
         }
+
       }
-    }
+
+    } ## end else [ if ( $exon->strand() ==...)]
   } else {
-    push( @$ea, $exon );
+    push( @{$ea}, $exon );
     $was_added = 1;
   }
 
   # sanity check:
-  if(!$was_added) {
-    # exon was not added because it has same end coord as start
-    # of another exon
+  if ( !$was_added ) {
+    # The exon was not added because it was overloapping with an
+    # existing exon.
     my $all_str = '';
-    foreach my $e (@$ea) {
-      $all_str .= '  '.$e->start .'-'.$e->end.' ('.$e->strand.') ' .
-        ($e->stable_id || '') . "\n";
+
+    foreach my $e ( @{$ea} ) {
+      $all_str .= '  '
+        . $e->start() . '-'
+        . $e->end() . ' ('
+        . $e->strand() . ') '
+        . ( $e->stable_id() || '' ) . "\n";
     }
-    my $cur_str = '  '.$exon->start.'-'.$exon->end. ' ('.$exon->strand.') '.
-      ($exon->stable_id || '')."\n";
-    throw("Exon overlaps with other exon in same transcript.\n" .
-          "Transcript Exons:\n$all_str\n" .
-          "This Exon:\n$cur_str");
+
+    my $cur_str = '  '
+      . $exon->start() . '-'
+      . $exon->end() . ' ('
+      . $exon->strand() . ') '
+      . ( $exon->stable_id() || '' ) . "\n";
+
+    throw(   "Exon overlaps with other exon in same transcript.\n"
+           . "Transcript Exons:\n$all_str\n"
+           . "This Exon:\n$cur_str" );
   }
 
   # recalculate start, end, slice, strand
   $self->recalculate_coordinates();
-}
+} ## end sub add_Exon
 
 
 =head2 get_all_Exons
@@ -2265,30 +2379,33 @@ sub recalculate_coordinates {
 
   my $exons = $self->get_all_Exons();
 
-  if ( !$exons || !@$exons ) { return }
+  if ( !$exons || !@{$exons} ) { return }
 
   my ( $slice, $start, $end, $strand );
 
   my $e_index;
-  for ( $e_index = 0; $e_index < @$exons; $e_index++ ) {
+  for ( $e_index = 0; $e_index < @{$exons}; $e_index++ ) {
     my $e = $exons->[$e_index];
+
     # Skip missing or unmapped exons!
-    next if ( !defined($e) or !defined( $e->start ) );
-    $slice  = $e->slice();
-    $strand = $e->strand();
-    $start  = $e->start();
-    $end    = $e->end();
-    last;
+    if ( defined($e) && defined( $e->start() ) ) {
+      $slice  = $e->slice();
+      $strand = $e->strand();
+      $start  = $e->start();
+      $end    = $e->end();
+
+      last;
+    }
   }
 
   my $transsplicing = 0;
 
   # Start loop after first exon with coordinates
-  for ( ; $e_index < @$exons; $e_index++ ) {
+  for ( ; $e_index < @{$exons}; $e_index++ ) {
     my $e = $exons->[$e_index];
 
     # Skip missing or unmapped exons!
-    if ( !defined($e) or !defined( $e->start ) ) { next }
+    if ( !defined($e) || !defined( $e->start() ) ) { next }
 
     if ( $e->start() < $start ) {
       $start = $e->start();
@@ -2298,18 +2415,18 @@ sub recalculate_coordinates {
       $end = $e->end();
     }
 
-    if ( $slice
-      && $e->slice()
-      && $e->slice()->name() ne $slice->name() )
+    if (    defined($slice)
+         && $e->slice()
+         && $e->slice()->name() ne $slice->name() )
     {
-      throw("Exons with different slices "
-          . "are not allowed on one Transcript" );
+      throw(   "Exons with different slices "
+             . "are not allowed on one Transcript" );
     }
 
     if ( $e->strand() != $strand ) {
       $transsplicing = 1;
     }
-  }
+  } ## end for ( ; $e_index < @{$exons...})
   if ($transsplicing) {
     warning("Transcript contained trans splicing event");
   }
@@ -2448,19 +2565,21 @@ sub get_all_DAS_Features {
 
 =head2 _compare_xrefs
 
-  Description: compare xrefs based on priority (descending), then name (ascending),
-               then display_label (ascending)
+  Description: compare xrefs based on priority (descending), then
+               name (ascending), then display_label (ascending)
 
 =cut
 
 sub _compare_xrefs {
   # compare on priority first (descending)
-  if ($a->priority() != $b->priority()) {
+  if ( $a->priority() != $b->priority() ) {
     return $b->priority() <=> $a->priority();
-  } else { # equal priorities, compare on external_db name
-    if ($a->dbname() ne $b->dbname()) {
+  } else {
+    # equal priorities, compare on external_db name
+    if ( $a->dbname() ne $b->dbname() ) {
       return $a->dbname() cmp $b->dbname();
-    } else { # equal priorities and names, compare on display_label
+    } else {
+      # equal priorities and names, compare on display_label
       return $a->display_id() cmp $b->display_id();
     }
   }

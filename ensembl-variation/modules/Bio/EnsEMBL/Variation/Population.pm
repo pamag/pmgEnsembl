@@ -1,3 +1,23 @@
+=head1 LICENSE
+
+ Copyright (c) 1999-2011 The European Bioinformatics Institute and
+ Genome Research Limited.  All rights reserved.
+
+ This software is distributed under a modified Apache license.
+ For license details, please see
+
+   http://www.ensembl.org/info/about/code_licence.html
+
+=head1 CONTACT
+
+ Please email comments or questions to the public Ensembl
+ developers list at <dev@ensembl.org>.
+
+ Questions may also be sent to the Ensembl help desk at
+ <helpdesk@ensembl.org>.
+
+=cut
+
 # Ensembl module for Bio::EnsEMBL::Variation::Population
 #
 # Copyright (c) 2004 Ensembl
@@ -51,10 +71,6 @@ diabetes), ethnic groups (e.g. caucasians), individuals used in an assay
 
 Populations may be arranged into an arbitrary hierarchy of sub and super
 populations.
-
-=head1 CONTACT
-
-Post questions to the Ensembl development list: ensembl-dev@ebi.ac.uk
 
 =head1 METHODS
 
@@ -221,10 +237,30 @@ sub get_all_synonyms {
   my $self = shift;
   my $source = shift;
 
-  return [] if(!$self->adaptor()); #if there is no adaptor, return empty strin
+  return [] if(!$self->adaptor()); #if there is no adaptor, return empty string
 
   return $self->adaptor()->fetch_synonyms($self->dbID(),$source);
 
+}
+
+=head2 get_all_Individuals
+
+  Arg [1]    : none
+  Example    : @individuals = @{$p->get_all_individuals()};
+  Description: Retrieves all Individuals belonging to this Population.
+  Returntype : reference to list of Bio::EnsEMBL::Variation::Individual objects
+  Exceptions : none
+  Caller     : general
+  Status     : At Risk
+
+=cut
+
+sub get_all_Individuals {
+  my $self = shift;
+
+  my $ia = $self->adaptor->db->get_IndividualAdaptor;
+  
+  return (defined $ia ? $ia->fetch_all_by_Population($self) : []);
 }
 
 1;

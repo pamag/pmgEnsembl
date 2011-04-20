@@ -1,5 +1,23 @@
-#!/software/bin/perl
+#!/usr/bin/env perl
 
+=head1 LICENSE
+
+
+  Copyright (c) 1999-2011 The European Bioinformatics Institute and
+  Genome Research Limited.  All rights reserved.
+
+  This software is distributed under a modified Apache license.
+  For license details, please see
+
+    http://www.ensembl.org/info/about/code_licence.html
+
+=head1 CONTACT
+
+  Please email comments or questions to the public Ensembl
+  developers list at <ensembl-dev@ebi.ac.uk>.
+
+  Questions may also be sent to the Ensembl help desk at
+  <helpdesk@ensembl.org>.
 
 =head1 NAME
 
@@ -72,24 +90,6 @@ The following figure gives examples.
       |=============== RegFeature =================|
 
 [more documentation to be added]
-
-=head1 LICENSE
-
-  Copyright (c) 1999-2009 The European Bioinformatics Institute and
-  Genome Research Limited.  All rights reserved.
-
-  This software is distributed under a modified Apache license.
-  For license details, please see
-
-    http://www.ensembl.org/info/about/code_licence.html
-
-=head1 CONTACT
-
-  Please email comments or questions to the public Ensembl
-  developers list at <ensembl-dev@ebi.ac.uk>.
-
-  Questions may also be sent to the Ensembl help desk at
-  <helpdesk@ensembl.org>.
 
 =cut
 
@@ -284,8 +284,6 @@ $outdir =~ s/\/$//o;
 
 
 
-
-
 #use Bio::EnsEMBL::Funcgen::Utils::RegulatoryBuild qw(is_overlap);
 #NJ what was this being used for and can we use the RangeRegistry?
 
@@ -343,6 +341,12 @@ my $efa = $db->get_ExternalFeatureAdaptor();
 my $sa  = $db->dnadb->get_SliceAdaptor();
 my $aa  = $db->get_AnalysisAdaptor();
 my $ga  = $db->dnadb->get_GeneAdaptor();
+
+
+
+#Is this true across all supporting and reg sets?
+#Do we want to handle the rsets here?
+my ($dset_states, $rset_states, $fset_states) = $helper->get_regbuild_set_states($db);
 
 
 
@@ -1550,7 +1554,6 @@ sub create_regulatory_features{
   
 
 
-
 sub get_regulatory_FeatureSets{
   my ($analysis, $ctypes) = @_;
   my %rf_sets;
@@ -1567,6 +1570,8 @@ sub get_regulatory_FeatureSets{
 	
 	($ftype) = @{$fta->store($ftype)} if ($write_features);
   }
+  
+  my (@dsets, @fsets);
 	
 
   foreach my $ctype (keys %{$ctypes}) {	
@@ -1600,12 +1605,43 @@ sub get_regulatory_FeatureSets{
 												 1,#recovery?
 												 \@slices, $dlabel);
 
-
 	#Always overwrite in case we have redefined the sets
 	&store_regbuild_meta_strings($dset, 1);
 	$rf_sets{$ctype} = $dset->product_FeatureSet;
+
+	#Set states
+	#Move to Utils/RegBuilder.pm?
+   
+	push @dsets, $dset;
+
+	foreach my $fset(@{$ctype_fsets{$ctype}}){
+	  my $ss_dset = $dsa->fetch_by_product_FeatureSet($fset);
+
+	  if(! $ss_dset){
+		die("Could not find DataSet for FeatureSet:\t".$fset->name);
+	  }
+	  
+	  push @dsets, $ss_dset;
+	}
+
+	push @fsets, ($dset->product_FeatureSet, @{$ctype_fsets{$ctype}});	
+  }
+
+  #Set states
+  #Move to Utils/RegBuilder.pm?
+  foreach my $dset(@dsets){
+	foreach my $ds_state(@{$dset_states}){
+	  $dsa->store_status($ds_state, $dset);
+	}
   }
     
+  foreach my $fset(@fsets){
+	foreach my $fs_state(@{$fset_states}){
+	  $fsa->store_status($fs_state, $fset);
+	}
+  }
+
+
   $helper->log("Got RegulatoryFeature sets for CellTypes:\t".join(', ', keys %rf_sets));
   return \%rf_sets;
 

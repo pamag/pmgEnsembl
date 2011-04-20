@@ -1,7 +1,2 @@
-/README/1.4/Wed Nov 18 10:57:04 2009//Tbranch-ensembl-60
-/convert_external_dbs.pl/1.1/Fri May  2 16:12:48 2003//Tbranch-ensembl-60
-/external_dbs.txt/1.224/Tue Oct  5 14:59:01 2010//Tbranch-ensembl-60
-/load_additional_human_affy_xrefs.pl/1.1/Fri May  2 11:02:57 2003//Tbranch-ensembl-60
-/load_additional_human_gkb_xrefs.pl/1.1/Fri May  2 11:02:57 2003//Tbranch-ensembl-60
-/update_external_dbs.pl/1.22/Thu Nov 19 12:56:06 2009//Tbranch-ensembl-60
+/README-production_db.txt/1.1/Tue Nov 16 14:05:30 2010//Tbranch-ensembl-62
 D

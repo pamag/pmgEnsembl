@@ -1,4 +1,4 @@
-# $Id: UCSCParser.pm,v 1.4 2008-09-02 10:02:10 ianl Exp $
+# $Id: UCSCParser.pm,v 1.6 2011-03-03 16:36:53 ak4 Exp $
 
 package XrefParser::UCSCParser;
 
@@ -86,6 +86,8 @@ sub run {
     $self->add_xref( $source_id, $species_id, \%xref );
   } ## end while ( defined( my $line...
   $data_io->close();
+
+  $self->dbi()->do("OPTIMIZE TABLE coordinate_xref");
 
   return 0;
 } ## end sub run

@@ -12,7 +12,7 @@ use Bio::EnsEMBL::DBLoader;
 use Bio::EnsEMBL::Registry;
 
 # Version number updated by cvs
-our $VERSION = sprintf "%d.%d", q$Revision: 1.18 $ =~ /: (\d+)\.(\d+)/;
+our $VERSION = sprintf "%d.%d", q$Revision: 1.21 $ =~ /: (\d+)\.(\d+)/;
 
 Bio::EnsEMBL::Registry->no_version_check(1);
 
@@ -24,6 +24,7 @@ my $help;
 my %compara_conf;
 $compara_conf{'-port'} = 3306;
 my %healthcheck_conf;
+my %pair_aligner_conf;
 
 # ok this is a hack, but I'm going to pretend I've got an object here
 # by creating a blessed hash ref and passing it around like an object
@@ -200,7 +201,12 @@ sub parse_conf {
       elsif($type eq 'HEALTHCHECKS') {
         %healthcheck_conf = %{$confPtr};
       }
-
+      elsif($type eq 'PAIR_ALIGNER_CONFIG') {
+        %pair_aligner_conf = %{$confPtr};
+      }
+      elsif($type eq 'SPECIES') {
+	  push @{$self->{'speciesList'}}, $confPtr;
+      }
     }
   }
 }
@@ -211,10 +217,8 @@ sub parse_conf {
 # this is a generic analysis of type 'genome_db_id'
 # the input_id for this analysis will be a genome_db_id
 # the full information to access the genome will be in the compara database
-# also creates 'GenomeLoadMembers' analysis and
-# 'GenomeDumpFasta' analysis in the 'genome_db_id' chain
-sub prepareChainSystem
-{
+
+sub prepareChainSystem {
   #yes this should be done with a config file and a loop, but...
   my $self = shift;
   my $chainConf = shift;
@@ -505,6 +509,11 @@ sub prepareNetSystem {
 
   #Create healthcheck jobs
   $self->create_pairwise_healthcheck_analysis($output_method_link_type);
+
+  #Create pair_aligner_config jobs
+  if (defined %pair_aligner_conf) {
+      $self->create_pair_aligner_config_analysis($output_method_link_type);
+  }
 }
 
 sub create_set_internal_ids_analysis {
@@ -632,6 +641,86 @@ sub create_set_internal_ids_analysis {
      }
  }
 
+sub create_pair_aligner_config_analysis {
+    my ($self, $output_method_link_type) = @_;
+
+    #Create pair_aligner_config analysis job
+    my $ref_url;
+    my $non_ref_url;
+    foreach my $speciesPtr (@{$self->{'speciesList'}}) {
+	my $dbname = $speciesPtr->{dbname};
+	my $host = $speciesPtr->{host};
+	my $port = $speciesPtr->{port};
+	my $user = $speciesPtr->{user};
+	my $species = $speciesPtr->{species};
+	my $pass = $speciesPtr->{pass};
+	if ($species eq $pair_aligner_conf{ref_species}) {
+	    $ref_url = get_url($host, $port, $user, $dbname, $pass);
+	} else {
+	    $non_ref_url = get_url($host, $port, $user, $dbname, $pass);
+	}
+    }
+    my $params = "{";
+    $params .= "'ref_species' => '" . $pair_aligner_conf{ref_species} . "', ";
+    $params .= "'ref_url' =>'$ref_url', ";
+    $params .= "'non_ref_url' => '$non_ref_url', ";
+    $params .= "'method_link_type'=>\'$output_method_link_type\', ";
+    $params .= "'genome_db_ids'=>'[";
+    $params .= join ",", map $_->{'genome_db_id'}, values %{$self->{'dna_collection_conf_selected_hash'}};
+    $params .= "]', ";
+    $params .= "'bed_dir' => '" . $pair_aligner_conf{bed_dir} . "', ";
+    $params .= "'config_url' => '" . $pair_aligner_conf{config_url} . "', ";
+    $params .= "'config_file' => '" . $pair_aligner_conf{config_file} . "',";
+    $params .= "'perl_path' => '" . $pair_aligner_conf{perl_path} . "',";
+    $params .= "}";
+
+    my $pair_aligner_config_analysis = Bio::EnsEMBL::Analysis->new(
+       -logic_name      => 'PairAlignerConfig',
+       -module          => 'Bio::EnsEMBL::Compara::RunnableDB::PairAlignerConfig',
+       -parameters      => $params,
+    );
+
+    $self->{'analysis_adaptor'}->store($pair_aligner_config_analysis);
+    my $stats = $pair_aligner_config_analysis->stats;
+    $stats->batch_size(1);
+    $stats->hive_capacity(1);
+    $stats->status('BLOCKED');
+    $stats->update();
+
+    Bio::EnsEMBL::Hive::DBSQL::AnalysisJobAdaptor->CreateNewJob(
+ 	   -analysis       => $pair_aligner_config_analysis,
+	   -input_id       => " ",
+    );
+
+    #Create control flow rule to run after pairwise_healthcheck or the last analysis
+    if (defined $self->{'pairwise_healthcheck_analysis'}) {
+	$self->{'ctrlflow_adaptor'}->create_rule($self->{'pairwise_healthcheck_analysis'}, $pair_aligner_config_analysis);
+    } elsif (defined $self->{'updateMaxAlignmentLengthAfterNetAnalysis'}) {
+	$self->{'ctrlflow_adaptor'}->create_rule($self->{'updateMaxAlignmentLengthAfterNetAnalysis'}, $pair_aligner_config_analysis);
+    } else {
+	 #After Chaining (self-self blastz)
+	$self->{'ctrlflow_adaptor'}->create_rule($self->{'updateMaxAlignmentLengthAfterChainAnalysis'}, $pair_aligner_config_analysis);
+    }
+}
+
+#
+#Converst host, (password), port, user and dbname into a url 
+#
+sub get_url {
+    my ($host, $port, $user, $dbname, $pass) = @_;
+    my $url;
+
+    #Get ensembl version from core database name
+    my ($version) = $dbname =~ /core_(\d+)_.*/;
+
+    if (defined $pass) {
+	$url = "mysql://" . $user . ":" . $pass . "@" . $host . ":" . $port . "/" . $version;
+    } else {
+	$url = "mysql://" . $user . "@" . $host . ":" . $port . "/" . $version;
+    }
+    return $url;
+}
+
 sub storeMaskingOptions
 {
   my $self = shift;
@@ -690,10 +779,10 @@ sub createChunkAndGroupDnaJobs
   }
   $input_id .= "}";
 
-  Bio::EnsEMBL::Hive::DBSQL::AnalysisJobAdaptor->CreateNewJob
-      (-input_id       => $input_id,
-       -analysis       => $self->{'noChunkAndGroupDnaAnalysis'},
-       -input_job_id   => 0);
+  Bio::EnsEMBL::Hive::DBSQL::AnalysisJobAdaptor->CreateNewJob(
+        -input_id       => $input_id,
+        -analysis       => $self->{'noChunkAndGroupDnaAnalysis'},
+  );
 }
 
 sub create_dump_nib_job
@@ -703,11 +792,10 @@ sub create_dump_nib_job
   
   my $input_id = "{\'dna_collection_name\'=>\'$collection_name\'}";
 
-  Bio::EnsEMBL::Hive::DBSQL::AnalysisJobAdaptor->CreateNewJob (
+  Bio::EnsEMBL::Hive::DBSQL::AnalysisJobAdaptor->CreateNewJob(
         -input_id       => $input_id,
         -analysis       => $self->{'dumpLargeNibForChainsAnalysis'},
-        -input_job_id   => 0
-        );
+  );
   
 }
 
@@ -727,11 +815,10 @@ sub prepCreateAlignmentChainsJobs {
   $input_id .= "\'query_collection_name\'=>\'$query_collection_name\',\'target_collection_name\'=>\'$target_collection_name\',";
   $input_id .= ",\'logic_name\'=>\'$logic_name\'}";
 
-  Bio::EnsEMBL::Hive::DBSQL::AnalysisJobAdaptor->CreateNewJob (
+  Bio::EnsEMBL::Hive::DBSQL::AnalysisJobAdaptor->CreateNewJob(
         -input_id       => $input_id,
         -analysis       => $self->{'createAlignmentChainsJobsAnalysis'},
-        -input_job_id   => 0
-        );
+  );
 }
 
 sub prepCreateAlignmentNetsJobs {
@@ -752,11 +839,10 @@ sub prepCreateAlignmentNetsJobs {
   $input_id .= "\'collection_name\'=>\'$query_collection_name\'";
   $input_id .= ",\'logic_name\'=>\'$logic_name\'}";
 
-  Bio::EnsEMBL::Hive::DBSQL::AnalysisJobAdaptor->CreateNewJob (
+  Bio::EnsEMBL::Hive::DBSQL::AnalysisJobAdaptor->CreateNewJob(
         -input_id       => $input_id,
         -analysis       => $self->{'createAlignmentNetsJobsAnalysis'},
-        -input_job_id   => 0
-        );
+  );
 }
 
 sub createFilterStackJob {
@@ -764,11 +850,10 @@ sub createFilterStackJob {
     my $collection_name = shift;
 
     my $input_id = "{\'collection_name\'=>\'$collection_name\'}";
-    Bio::EnsEMBL::Hive::DBSQL::AnalysisJobAdaptor->CreateNewJob (
+    Bio::EnsEMBL::Hive::DBSQL::AnalysisJobAdaptor->CreateNewJob(
         -input_id       => $input_id,
         -analysis       => $self->{'filterStackAnalysis'},
-        -input_job_id   => 0
-        );
+    );
 }
 
 sub createUpdateMaxAlignmentLengthAfterStackJob {
@@ -777,11 +862,10 @@ sub createUpdateMaxAlignmentLengthAfterStackJob {
     my $target_genome_db_id = shift;
 
     my $input_id = "{\'query_genome_db_id\' => \'" . $query_genome_db_id . "\',\'target_genome_db_id\' => \'" . $target_genome_db_id . "\'}";
-    Bio::EnsEMBL::Hive::DBSQL::AnalysisJobAdaptor->CreateNewJob (
+    Bio::EnsEMBL::Hive::DBSQL::AnalysisJobAdaptor->CreateNewJob(
         -input_id       => $input_id,
         -analysis       => $self->{'updateMaxAlignmentLengthAfterStackAnalysis'},
-        -input_job_id   => 0
-        );
+    );
 }
 
 sub generate_paramaters_string {

@@ -15,7 +15,12 @@ my $reg = "Bio::EnsEMBL::Registry";
 
 sub run_script {
 
-  my ($self, $file, $source_id, $species_id, $verbose) = @_;
+  my $self = shift if (defined(caller(1)));
+
+  my $file = shift;
+  my $source_id = shift;
+  my $species_id = shift;
+  my $verbose = shift;
 
   my ($type, $my_args) = split(/:/,$file);
 
@@ -38,12 +43,18 @@ sub run_script {
   if($my_args =~ /vhost[=][>](\S+?)[,]/){
     $vhost = $1;
   }
+  if($my_args =~ /vuser[=][>](\S+?)[,]/){
+    $vuser = $1;
+  }
   if($my_args =~ /vport[=][>](\S+?)[,]/){
     $vport =  $1;
   }
   if($my_args =~ /vdbname[=][>](\S+?)[,]/){
     $vdbname = $1;
   }
+  else{
+    print "No vdbname??? $my_args??\n";
+  }	
   if($my_args =~ /vpass[=][>](\S+?)[,]/){
     $vpass = $1;
   }
@@ -57,6 +68,9 @@ sub run_script {
   if($my_args =~ /chost[=][>](\S+?)[,]/){
     $chost = $1;
   }
+  if($my_args =~ /cuser[=][>](\S+?)[,]/){
+    $cuser = $1;
+  }
   if($my_args =~ /cport[=][>](\S+?)[,]/){
     $cport =  $1;
   }
@@ -69,7 +83,7 @@ sub run_script {
   my $vega_dbc;
   my $core_dbc;
   if(defined($vdbname)){
-    print "Using $host $vdbname for Vega and cdbname for Core\n";
+    print "Using $host $vdbname for Vega and $cdbname for Core\n";
     $vega_dbc = $self->dbi2($vhost, $vport, $vuser, $vdbname, $vpass);
     if(!defined($vega_dbc)){
       print "Problem could not open connectipn to $vhost, $vport, $vuser, $vdbname, $vpass\n";
@@ -103,7 +117,7 @@ sub run_script {
 
 
 
-  $source_id = XrefParser::BaseParser->get_source_id_for_source_name("HGNC","havana");
+  $source_id = XrefParser::BaseParser->get_source_id_for_source_name("HGNC","vega");
 
 
   my $sql = 'select tsi.stable_id, x.display_label from xref x, object_xref ox , transcript_stable_id tsi, external_db e where e.external_db_id = x.external_db_id and x.xref_id = ox.xref_id and tsi.transcript_id = ox.ensembl_id and e.db_name like ?';
@@ -111,13 +125,12 @@ sub run_script {
 
   my $hgnc_sql = 'select tsi.stable_id, x.dbprimary_acc from xref x, object_xref ox , transcript_stable_id tsi, gene g, external_db e, transcript t  where t.gene_id = g.gene_id and g.gene_id = ox.ensembl_id and tsi.transcript_id = t.transcript_id and e.external_db_id = x.external_db_id and x.xref_id = ox.xref_id and ox.ensembl_object_type = "Gene" and e.db_name like "HGNC"';
 
-
   my %ott_to_hgnc;
   my %ott_to_enst;
 
   my $sth = $core_dbc->prepare($sql) || die "Could not prepare for core $sql\n";
 
-  foreach my $external_db (qw(OTTT shares_CDS_and_UTR_with_OTTT shares_CDS_with_OTTT)){
+  foreach my $external_db (qw(OTTT shares_CDS_and_UTR_with_OTTT shares_CDS_with_OTTT Vega_transcript)){
     $sth->execute($external_db) or croak( $core_dbc->errstr());
     while ( my @row = $sth->fetchrow_array() ) {
       $ott_to_enst{$row[1]} = $row[0];
@@ -211,22 +224,20 @@ sub run_script {
 	next;
       }
       if(!defined($acc{$hgnc})){
-	$acc{$hgnc} = 1;
 	my $version ="";
 	$line_count++;
 	
 	my $xref_id = $self->add_xref($hgnc, $version{$hgnc} , $label{$hgnc}||$hgnc , $description{$hgnc}, $source_id, $species_id, "DIRECT");
+	$acc{$hgnc} = $xref_id;
 	$xref_count++;
+      }
 	
-	
-	$self->add_direct_xref($xref_id, $stable_id, "transcript", "");
+      $self->add_direct_xref($acc{$hgnc}, $stable_id, "transcript", "");
 
-	if(defined($syn_hash->{$hgnc})){
-	  foreach my $syn (@{$syn_hash->{$hgnc}}){
-	    $add_syn_sth->execute($xref_id, $syn);
-	  }
+      if(defined($syn_hash->{$hgnc})){
+	foreach my $syn (@{$syn_hash->{$hgnc}}){
+	  $add_syn_sth->execute($acc{$hgnc}, $syn);
 	}
-
       }
     }
   }

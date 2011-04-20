@@ -21,13 +21,22 @@ use constant MAX_SHORT => 2**16 -1;
 my %Printable = ( "\\"=>'\\', "\r"=>'r', "\n"=>'n', "\t"=>'t', "\""=>'"' );
 
 
-my ($TMP_DIR, $TMP_FILE, $species);
+my ($TMP_DIR, $TMP_FILE, $species, $selected_seq_region, $registry_file);
 
 
 GetOptions(   'tmpdir=s'  => \$TMP_DIR,
 	      'tmpfile=s' => \$TMP_FILE,
 	      'species=s' => \$species,
+		  'seq_region=i' => \$selected_seq_region,
+		  'registry_file=s' => \$registry_file,
 		   );
+
+$selected_seq_region ||= $ENV{LSB_JOBINDEX} if defined($ENV{LSB_JOBINDEX});
+
+$TMP_FILE .= "_".$selected_seq_region if defined($selected_seq_region);
+
+my $dump_file = 'compressed_genotype.txt';
+$dump_file .= "_".$selected_seq_region if defined($selected_seq_region);
 
 warn("Make sure you have an updated ensembl.registry file!\n");
 
@@ -35,7 +44,7 @@ usage('-TMP_DIR argument is required') if(!$TMP_DIR);
 usage('-TMP_FILE argument is required') if(!$TMP_FILE);
 usage('-species argument is required') if(!$species);
 
-my $registry_file ||= $Bin . "/ensembl.registry";
+$registry_file ||= $Bin . "/ensembl.registry";
 
 Bio::EnsEMBL::Registry->load_all( $registry_file );
 
@@ -59,26 +68,31 @@ sub compress_genotypes{
     my $genotypes = {}; #hash containing all the genotypes
     my $blob = '';
     my $count = 0;
-    my $sth = $dbVar->prepare(qq{SELECT STRAIGHT_JOIN vf.seq_region_id, vf.seq_region_start, vf.seq_region_end, vf.seq_region_strand, ig.allele_1, ig.allele_2, ig.sample_id, vf.allele_string
-				     FROM variation_feature vf FORCE INDEX(pos_idx), tmp_individual_genotype_single_bp ig
+	
+	my $extra_sql = ($selected_seq_region ? " AND vf.seq_region_id = $selected_seq_region " : "");
+	
+    my $sth = $dbVar->prepare(qq{SELECT STRAIGHT_JOIN vf.seq_region_id, vf.seq_region_start, vf.seq_region_end, vf.seq_region_strand, ig.allele_1, ig.allele_2, ig.sample_id, vf.allele_string, v.flipped
+				     FROM variation_feature vf FORCE INDEX(pos_idx), tmp_individual_genotype_single_bp ig, variation v
 				     WHERE ig.variation_id = vf.variation_id
+					 AND vf.variation_id = v.variation_id
 				     AND vf.map_weight = 1
 				     AND ig.allele_1 <> 'N'
 				     AND ig.allele_2 <> 'N'
+					 $extra_sql
 				     ORDER BY vf.seq_region_id, vf.seq_region_start}, {mysql_use_result => 1});
 
     print "Time starting to dump data from database: ",scalar(localtime(time)),"\n";
     $sth->execute();
     
     #information dumping from database
-    my ($seq_region_id, $seq_region_start, $seq_region_end, $seq_region_strand, $allele_1, $allele_2, $sample_id, $allele_string);
+    my ($seq_region_id, $seq_region_start, $seq_region_end, $seq_region_strand, $allele_1, $allele_2, $sample_id, $allele_string, $flipped);
     my $previous_seq_region_id = 0;
 
-    $sth->bind_columns(\$seq_region_id, \$seq_region_start, \$seq_region_end, \$seq_region_strand, \$allele_1, \$allele_2, \$sample_id, \$allele_string);
+    $sth->bind_columns(\$seq_region_id, \$seq_region_start, \$seq_region_end, \$seq_region_strand, \$allele_1, \$allele_2, \$sample_id, \$allele_string, \$flipped);
     while ($sth->fetch){
 	#new chromosome, print all remaining genotypes and upload the file
 	if ($previous_seq_region_id != $seq_region_id && $previous_seq_region_id != 0){
-	    print_file("$TMP_DIR/compressed_genotype.txt",$genotypes, $previous_seq_region_id);
+	    print_file("$TMP_DIR/$dump_file",$genotypes, $previous_seq_region_id);
 	    $genotypes = {}; #and flush the hash
 	    #need to fork for upload the data
 	    my $pid = fork;
@@ -105,12 +119,12 @@ sub compress_genotypes{
 	#compare with the beginning of the region if it is within the DISTANCE of compression
 	if ((abs($genotypes->{$sample_id}->{region_start} - $seq_region_start) > DISTANCE()) || (abs($seq_region_start - $genotypes->{$sample_id}->{region_end}) > MAX_SHORT)){
 	    #snp outside the region, print the region for the sample we have already visited and start a new one
-	    print_file("$TMP_DIR/compressed_genotype.txt",$genotypes, $seq_region_id, $sample_id);
+	    print_file("$TMP_DIR/$dump_file",$genotypes, $seq_region_id, $sample_id);
 	    delete $genotypes->{$sample_id}; #and remove the printed entry
 	    $genotypes->{$sample_id}->{region_start} = $seq_region_start;
 	}
 	#escape characters (tab, new line)
-	reverse_alleles($seq_region_strand, $allele_string, \$allele_1, \$allele_2);
+	reverse_alleles($seq_region_strand, $allele_string, \$allele_1, \$allele_2, $flipped);
 	#and write it to the buffer
 	if ($seq_region_start != $genotypes->{$sample_id}->{region_start}){
 	    #compress information
@@ -129,7 +143,7 @@ sub compress_genotypes{
     $sth->finish();
     print "Time finishing dumping data: ",scalar(localtime(time)),"\n";
     #print last region
-    print_file("$TMP_DIR/compressed_genotype.txt",$genotypes, $previous_seq_region_id);
+    print_file("$TMP_DIR/$dump_file",$genotypes, $previous_seq_region_id);
     #and import remainig genotypes
     &import_genotypes($dbVar);
 }
@@ -159,7 +173,7 @@ sub import_genotypes{
     my $dbVar = shift;
 
     debug("Importing compressed genotype data");
-    my $call = "mv $TMP_DIR/compressed_genotype.txt $TMP_DIR/$TMP_FILE";
+    my $call = "mv $TMP_DIR/$dump_file $TMP_DIR/$TMP_FILE";
     system($call);
     load($dbVar,qw(compressed_genotype_single_bp sample_id seq_region_id seq_region_start seq_region_end seq_region_strand genotypes));
 }
@@ -178,7 +192,7 @@ sub update_meta_coord {
     my $cs = $csa->fetch_by_name($csname);
 
     my $sth = $dbVar->prepare
-	('INSERT INTO meta_coord (table_name,coord_system_id,max_length) VALUES (?,?,?)');
+	('INSERT IGNORE INTO meta_coord (table_name,coord_system_id,max_length) VALUES (?,?,?)');
 
     $sth->execute($table_name, $cs->dbID(),DISTANCE+1);
     
@@ -194,24 +208,34 @@ sub reverse_alleles{
     my $allele_string = shift;
     my $ref_allele_1 = shift;
     my $ref_allele_2 = shift;
+	my $flipped = shift;
     
     my @alleles = split("/",$allele_string);
-    #the variation_feature is in the opposite strand, reverse the genotypes
+    
+	# work out whether we're flipping or not
+	my $flip = 0;
+	
+	# flipped column has been set
+	if(defined($flipped)) {
+		if($flipped == 1 && $seq_region_strand == 1) {
+			$flip = 1;
+		}
+		elsif($flipped == 0 && $seq_region_strand == -1) {
+			$flip = 1;
+		}
+	}
+	
+	# flipped column has not been set - use old behaviour
+	else {
+		if($seq_region_strand == -1) {
+			$flip = 1;
+		}
+	}
 
-    if ($seq_region_strand == -1){
-	reverse_comp($ref_allele_1);
-	reverse_comp($ref_allele_2);
-#	reverse_comp(\$alleles[0]);
-#	reverse_comp(\$alleles[1]);
+    if ($flip){
+		reverse_comp($ref_allele_1);
+		reverse_comp($ref_allele_2);
     }
-    #Only reverse genotypes with valid base
-#    if ($$ref_allele_1 ne 'N'){
-#	#compare the genotype with the forward alleles, if they are different, reverse them
-#	if ((@alleles == 2) && (($$ref_allele_1 ne $alleles[0]) && ($$ref_allele_1 ne $alleles[1]))){
-#	    reverse_comp($ref_allele_1);
-#	    reverse_comp($ref_allele_2);
-#	}	
-#    }
 }
 
 # $special_characters_escaped = printable( $source_string );

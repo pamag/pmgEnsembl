@@ -1,3 +1,23 @@
+=head1 LICENSE
+
+ Copyright (c) 1999-2011 The European Bioinformatics Institute and
+ Genome Research Limited.  All rights reserved.
+
+ This software is distributed under a modified Apache license.
+ For license details, please see
+
+   http://www.ensembl.org/info/about/code_licence.html
+
+=head1 CONTACT
+
+ Please email comments or questions to the public Ensembl
+ developers list at <dev@ensembl.org>.
+
+ Questions may also be sent to the Ensembl help desk at
+ <helpdesk@ensembl.org>.
+
+=cut
+
 # Ensembl module for Bio::EnsEMBL::Variation::AlleleFeature
 #
 # Copyright (c) 2005 Ensembl
@@ -43,10 +63,6 @@ of the information has been denormalized and is available on the feature for
 speed purposes.  A AlleleFeature behaves as any other Ensembl feature.
 See B<Bio::EnsEMBL::Feature> and B<Bio::EnsEMBL::Variation::Variation>.
 
-=head1 CONTACT
-
-Post questions to the Ensembl development list: ensembl-dev@ebi.ac.uk
-
 =head1 METHODS
 
 =cut
@@ -61,9 +77,6 @@ use Bio::EnsEMBL::Utils::Exception qw(throw warning);
 use Bio::EnsEMBL::Utils::Argument  qw(rearrange);
 use Bio::EnsEMBL::Variation::Utils::Sequence qw(unambiguity_code);
 use Bio::EnsEMBL::Variation::ConsequenceType;
-
-my %CONSEQUENCE_TYPES = %Bio::EnsEMBL::Variation::ConsequenceType::CONSEQUENCE_TYPES;
-
 
 our @ISA = ('Bio::EnsEMBL::Feature');
 
@@ -106,8 +119,8 @@ our @ISA = ('Bio::EnsEMBL::Feature');
   Arg [-ALLELE_STRING] :
     string - the allele for this AlleleFeature object.
   
-  Arg [-CONSEQUENCE_TYPE] :
-	string - the consequence type of this AlleleFeature object.
+  Arg [-OVERLAP_CONSEQUENCES] :
+	listref of Bio::EnsEMBL::Variation::OverlapConsequence objects.
 
   Example    :
     $af = Bio::EnsEMBL::Variation::AlleleFeature->new
@@ -135,17 +148,17 @@ sub new {
   my $class = ref($caller) || $caller;
 
   my $self = $class->SUPER::new(@_);
-  my ($allele, $cons, $var_name, $variation, $variation_id,$population, $sample_id, $source) =
-    rearrange([qw(ALLELE_STRING CONSEQUENCE_TYPE VARIATION_NAME 
+  my ($allele, $overlap_consequences, $var_name, $variation, $variation_id, $population, $sample_id, $source) =
+    rearrange([qw(ALLELE_STRING OVERLAP_CONSEQUENCES VARIATION_NAME 
                   VARIATION VARIATION_ID SAMPLE_ID SOURCE)], @_);
 
-  $self->{'allele_string'}    = $allele;
-  $self->{'consequence_type'} = $cons;
-  $self->{'variation_name'}   = $var_name;
-  $self->{'variation'}        = $variation;
-  $self->{'_variation_id'}    = $variation_id;
-  $self->{'_sample_id'}       = $sample_id;
-  $self->{'source'}           = $source;
+  $self->{'allele_string'}          = $allele;
+  $self->{'overlap_consequences'}   = $overlap_consequences;
+  $self->{'variation_name'}         = $var_name;
+  $self->{'variation'}              = $variation;
+  $self->{'_variation_id'}          = $variation_id;
+  $self->{'_sample_id'}             = $sample_id;
+  $self->{'source'}                 = $source;
 
   return $self;
 }
@@ -183,52 +196,92 @@ sub allele_string{
 
 =head2 consequence_type
 
-  Arg [1]    : string $newval (optional)
-               The new value to set the consequence_type attribute to
-  Example    : $con = $obj->consequence_type()
-  Description: Getter/Setter for the consequence_type attribute.
-  Returntype : string
+  Description: Get a list of all the unique display_terms of the OverlapConsequences 
+               of this AlleleFeature
+  Returntype : listref of strings
   Exceptions : none
-  Caller     : general
   Status     : At Risk
 
 =cut
 
-sub consequence_type{
-  my $self = shift;
-  my $con = shift;
-  
-  if(defined($con)) {
-	if($CONSEQUENCE_TYPES{$con}){
-	  $self->{'consequence_type'} = $con;
+sub consequence_type {
+    
+    my $self = shift;
+
+    unless ($self->{consequence_type}) {
+
+        # work out the terms from the OverlapConsequence objects
+        
+        $self->{consequence_type} = 
+            [ map { $_->display_term } @{ $self->get_all_OverlapConsequences } ];
     }
-	
-	else {
-	  warning("You are trying to set the consequence type to a non-allowed type. The allowed types are: ".(join ", ", keys %CONSEQUENCE_TYPES));
-	}
-  }
-  
-  return $self->{'consequence_type'};
+    
+    return $self->{consequence_type};
 }
 
+
+=head2 get_all_OverlapConsequences
+
+  Description: Get a list of all the unique OverlapConsequences of this AlleleFeature 
+  Returntype : listref of Bio::EnsEMBL::Variation::OverlapConsequence objects
+  Exceptions : none
+  Status     : At Risk
+
+=cut
+
+sub get_all_OverlapConsequences {
+    my $self = shift;
+    return $self->{overlap_consequences}
+}
+
+
+=head2 most_severe_OverlapConsequence
+
+  Description: Get the OverlapConsequence considered (by Ensembl) to be the most severe 
+               consequence of all the alleles of this AlleleFeature 
+  Returntype : Bio::EnsEMBL::Variation::OverlapConsequence
+  Exceptions : none
+  Status     : At Risk
+
+=cut
+
+sub most_severe_OverlapConsequence {
+    my $self = shift;
+    
+    unless ($self->{_most_severe_consequence}) {
+        
+        my $highest;
+        
+        for my $cons (@{ $self->get_all_OverlapConsequences }) {
+            $highest ||= $cons;
+            if ($cons->rank < $highest->rank) {
+                $highest = $cons;
+            }
+        }
+        
+        $self->{_most_severe_consequence} = $highest;
+    }
+    
+    return $self->{_most_severe_consequence};
+}
 
 
 =head2 display_consequence
 
-  Args	     : None
-  Example    : $con = $obj->display_consequence()
-  Description: Getter for the consequence_type attribute. Simply an alias for
-			   $obj->consequence_type()
+  Args       : none
+  Example    : $display_consequence = $af->display_consequence();
+  Description: Getter for the consequence type to display,
+               when more than one
   Returntype : string
   Exceptions : none
-  Caller     : general
+  Caller     : webteam
   Status     : At Risk
 
 =cut
 
-sub display_consequence{
-  my $self = shift;
-  return $self->consequence_type();
+sub display_consequence {
+    my $self = shift;
+    return $self->most_severe_OverlapConsequence->display_term;
 }
 
 
@@ -391,8 +444,11 @@ sub apply_edit  {
 
 
   my $len = $self->length;
-  substr($$seqref, $self->{'start'}-1, $len) = $self->{'allele_string'} if ($self->{'allele_string'} ne '-'); 
-  substr($$seqref, $self->{'start'}-1, 0) = $self->{'allele_string'} if ($self->{'allele_string'} eq '-');
+  my $as = $self->{'allele_string'};
+  $as =~ s/\-//g;
+  
+  substr($$seqref, $self->{'start'}-1, $len) = $as;
+  
   return $seqref;
 
 }
@@ -422,6 +478,7 @@ sub length_diff  {
   return 0 - ($self->{'end'} - $self->{'start'} +1) if ($self->{'allele_string'} eq '-'); #do we need the +1 in the distance ??
 
 }
+
 
 sub length {
   my $self = shift;
@@ -469,7 +526,7 @@ sub source{
    }
    else{
        #we have a Strain or IndividualSlice, get the reference sequence from the method
-       $reference_allele = $self->slice->ref_subseq($self->start,$self->end,$self->strand);
+       $reference_allele = $self->slice->ref_subseq($self->start,$self->end,$self->strand) || '-';
    }
 
    return $reference_allele;

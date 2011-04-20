@@ -1,16 +1,29 @@
-#!/usr/local/ensembl/bin/perl
+#!/usr/bin/env perl
+
+=head1 LICENSE
+
+
+  Copyright (c) 1999-2011 The European Bioinformatics Institute and
+  Genome Research Limited.  All rights reserved.
+
+  This software is distributed under a modified Apache license.
+  For license details, please see
+
+    http://www.ensembl.org/info/about/code_licence.html
+
+=head1 CONTACT
+
+  Please email comments or questions to the public Ensembl
+  developers list at <ensembl-dev@ebi.ac.uk>.
+
+  Questions may also be sent to the Ensembl help desk at
+  <helpdesk@ensembl.org>.
 
 =head1 DESCRIPTION
 
 A mock feature creation system that allows us to specify where mock features cannot occur (eg in repeat regions) and where they must occur eg in introns
 
 Used to create a set of randomly placed mock regulatory features which are used for chi square calculation in the regulatory feature classification script reg_feat_gen_feat_overlaps.pl
-
-
-
-=head1 AUTHOR(S)
-
-dkeefe@ebi.ac.uk
 
 =head1 USAGE
 
@@ -32,6 +45,12 @@ create features which lie inside introns but not in repeats
 =head1 CVS
 
  $Log: mock_reg_feat_gen.pl,v $
+ Revision 1.4  2011-01-10 14:01:14  nj1
+ added generic #!/usr/bin/env perl
+
+ Revision 1.3  2011-01-10 13:32:23  nj1
+ updated boiler plate
+
  Revision 1.2  2010-07-15 14:29:53  dkeefe
  changed display_label to binary_string
 
@@ -41,9 +60,6 @@ create features which lie inside introns but not in repeats
 
  Revision 1.1  2008/04/11 09:54:54  dkeefe
  Used to create a set of randomly placed mock regulatory features which are used for chi square calculation in the regulatory feature classification script reg_feat_gen_feat_overlaps.pl
-
-
-
 
 
 =cut

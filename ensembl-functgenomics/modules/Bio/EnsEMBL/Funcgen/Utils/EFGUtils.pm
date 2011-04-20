@@ -1,3 +1,20 @@
+=head1 LICENSE
+
+  Copyright (c) 1999-2011 The European Bioinformatics Institute and
+  Genome Research Limited.  All rights reserved.
+
+  This software is distributed under a modified Apache license.
+  For license details, please see
+
+    http://www.ensembl.org/info/about/code_licence.html
+
+=head1 CONTACT
+
+  Please email comments or questions to the public Ensembl
+  developers list at <ensembl-dev@ebi.ac.uk>.
+
+  Questions may also be sent to the Ensembl help desk at
+  <helpdesk@ensembl.org>.
 
 =head1 NAME
 
@@ -19,18 +36,6 @@ This module collates a variety of miscellaneous methods.
 
   &Utils::send_mail($to_address, $title, $message);
 
-
-=head2 FILES
-
-
-=head2 NOTES
-
-
-
-=head2 AUTHOR(S)
-
-Nathan Johnson njohnson@ebi.ac.uk
-
 =cut
 
 
@@ -41,7 +46,11 @@ Nathan Johnson njohnson@ebi.ac.uk
 package Bio::EnsEMBL::Funcgen::Utils::EFGUtils;
 require Exporter;
 @ISA = qw(Exporter);
-@EXPORT_OK = qw(get_date species_name get_month_number species_chr_num open_file median mean run_system_cmd backup_file is_gzipped is_sam is_bed get_file_format strip_param_args generate_slices_from_names strip_param_flags);
+@EXPORT_OK = qw(get_date species_name get_month_number species_chr_num 
+				open_file median mean run_system_cmd backup_file 
+				is_gzipped is_sam is_bed get_file_format strip_param_args 
+				generate_slices_from_names strip_param_flags
+				get_current_regulatory_input_names, add_external_db);
 
 use Bio::EnsEMBL::Utils::Exception qw( throw );
 use File::Path qw (mkpath);
@@ -211,8 +220,9 @@ sub mean{
 #Or do in caller?
 
 sub open_file{
-  my ($file, $operator) = @_;
-	
+  my ($file, $operator, $file_permissions) = @_;
+  
+  my $dir_permissions = $file_permissions || 0755;
 
   $operator ||= '<';
 
@@ -224,11 +234,9 @@ sub open_file{
   	$operator = sprintf($operator, $file);
   }
 
-  #warn "operator is $operator";
-
   #Get dir here and create if not exists
   my $dir = dirname($file);  
-  mkpath($dir, {verbose => 1, mode => 0750}) if(! -d $dir);
+  mkpath($dir, {verbose => 1, mode => $dir_permissions}) if(! -d $dir);
   my $fh = new FileHandle "$operator";
 
 
@@ -236,6 +244,26 @@ sub open_file{
 
   if(! defined $fh){
 	croak("Failed to open $operator");
+  }
+
+
+  #Have to chmod here as umask will over-ride permissions passed to FileHandle
+  if(defined $file_permissions){
+
+	#Catch non-numeric here as chmod still returns true
+	if($file_permissions =~ /[^0-9]/){
+	  croak("Failed to change $file permissions using:\t$file_permissions");
+	}
+
+	#chmod requires a literal octal number e.g. 0775 not '0775'
+	#should catch numbers as strings here, but perl makes this very hard to test
+	#Can't even system this as if we build the cmd line with an octal it will be converted to a decimal
+ 	#These is still no way of testing for non-octal number or string
+	#eval/sprintf will also not fail if there are non-octal digits i.e. 1999
+	
+	#eval will treat octal number and string as true octal number
+	#else will pass non-octal string/number which we can't catch
+	chmod(eval($file_permissions), $file);
   }
 
   return $fh;
@@ -490,17 +518,20 @@ sub generate_slices_from_names{
   #Test if $assembly is old?
 
 
+
   my (@slices, $slice, $sr_name);
 
   if(@$slice_names){
 	
 	foreach my $name(@$slice_names){
 	  $slice = $slice_adaptor->fetch_by_region(undef, $name, undef, undef, undef, $assembly);
+
+	  #WHy is this failing for hap regions?
 	
 	  if(! $slice){
 
 		#Need to eval this as it will break with incorrect formating
-
+		
 		$slice = $slice_adaptor->fetch_by_name($name);
 
 		if(! $slice){
@@ -554,5 +585,65 @@ sub generate_slices_from_names{
 }
 
 
+# Tracking DB methods
+#Move to DBAdaptor? Can we add this as a separate package in the same module?
+
+sub get_current_regulatory_input_names{
+  my ($tdb, $efg_db, $focus) = @_;
+
+  #Validate is production?
+  my $sql;
+
+  if($focus){
+	$focus = 'Focus';
+	$sql   = 'SELECT efgdb_set_name from dataset where is_focus=true and is_current=true and species="'.$tdb->species.'"';
+  }
+  else{
+	$focus = 'Non-focus';
+	#0 rather than false so we don't get NULLs
+	$sql = 'SELECT efgdb_set_name from dataset where is_focus=0 and is_current=true and species="'.$tdb->species.'"';
+  }
+ 
+  my @prd_names = @{$tdb->dbc->db_handle->selectall_arrayref($sql)};
+  my @names;
+  my @failed_sets;
+
+  foreach my $prd_name(@prd_names){
+	$prd_name = "@$prd_name";
+	$sql = "SELECT name from feature_set where name like '${prd_name}%'";
+	my @tmp_names =  @{$efg_db->dbc->db_handle->selectall_arrayref($sql)};
+
+	#Do this via InputSets(using query extension?) instead of using like?
+
+	if(scalar(@tmp_names) != 1){
+	  push @failed_sets, @{$tmp_names[0]};
+	}
+	else{
+	  push @names, @{$tmp_names[0]};
+	}
+
+  }
+
+  if(@failed_sets){
+	throw("Failed to find unique $focus FeatureSets for production dataset names:\n\t".
+		  join("\n\t", @failed_sets)."\n");
+  }
+
+  return @names;
+}
+
+#Handy function to add an external_db entry when needed
+sub add_external_db{
+  my ($efg_db, $db_name,$db_release,$db_display_name) = @_;
+  my $sql = "select external_db_id from external_db where db_name='$db_name' and db_release='$db_release'";
+  my ($db_id) =  $efg_db->dbc->db_handle->selectrow_array($sql);
+  if($db_id){ 
+    warn "External DB $db_name $db_release already exists in db with db_id $db_id";
+  } else {
+    #TODO check if it there was a failure
+    $efg_db->dbc->do("insert into external_db (db_name, db_release, status, dbprimary_acc_linkable, priority, db_display_name, type) values('$db_name', '$db_release', 'KNOWNXREF', '1', '5', '$db_display_name', 'MISC')");
+  }
+
+}
 
 1;

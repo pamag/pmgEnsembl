@@ -1,6 +1,6 @@
 =head1 LICENSE
 
-  Copyright (c) 1999-2010 The European Bioinformatics Institute and
+  Copyright (c) 1999-2011 The European Bioinformatics Institute and
   Genome Research Limited.  All rights reserved.
 
   This software is distributed under a modified Apache license.
@@ -97,7 +97,7 @@ my @COMMENTS =
 =cut
 
 sub new {
-  my ($caller, $slice) = @_;
+  my ($caller, $slice, $params) = @_;
 
   my $class = ref($caller) || $caller;
 
@@ -112,6 +112,10 @@ sub new {
                        'vegagene'    => 0};
 
   my $self = bless {'feature_types' => $feature_types}, $class;
+
+  foreach my $p (sort keys %{$params || {}}) {
+      $self->{$p} = $params->{$p};
+  }
 
   return $self;
 }

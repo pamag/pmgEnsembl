@@ -1,7 +1,26 @@
 #
 # Ensembl module for Bio::EnsEMBL::Funcgen::ExternalFeature
 #
-# You may distribute this module under the same terms as Perl itself
+
+
+=head1 LICENSE
+
+  Copyright (c) 1999-2011 The European Bioinformatics Institute and
+  Genome Research Limited.  All rights reserved.
+
+  This software is distributed under a modified Apache license.
+  For license details, please see
+
+    http://www.ensembl.org/info/about/code_licence.html
+
+=head1 CONTACT
+
+  Please email comments or questions to the public Ensembl
+  developers list at <ensembl-dev@ebi.ac.uk>.
+
+  Questions may also be sent to the Ensembl help desk at
+  <helpdesk@ensembl.org>.
+
 
 =head1 NAME
 
@@ -28,18 +47,6 @@ my $feature = Bio::EnsEMBL::Funcgen::ExternalFeature->new(
 
 An ExternalFeature object represents the genomic placement of an externally curated
 feature from and DB external to Ensembl.
-
-=head1 AUTHOR
-
-This module was created by Nathan Johnson.
-
-This module is part of the Ensembl project: http://www.ensembl.org/
-
-=head1 CONTACT
-
-Post comments or questions to the Ensembl development list: ensembl-dev@ebi.ac.uk
-
-=head1 METHODS
 
 =cut
 
@@ -94,14 +101,33 @@ use vars qw(@ISA);
 sub new {
   my $caller = shift;
 	
-
-  #Can remove this?
-
   my $class = ref($caller) || $caller;
   my $self = $class->SUPER::new(@_);
+
+  #Remove this method if we interdb_stable_id to SetFeature
+  ($self->{'interdb_stable_id'}) = rearrange(['INTERDB_STABLE_ID'], @_);
  		
   return $self;
 }
+
+=head2 interdb_stable_id
+
+  Arg [1]    : (optional) int - stable_id e.g 1
+  Example    : my $idb_sid = $feature->interdb_stable_id();
+  Description: Getter for the interdb_stable_id attribute for this feature.
+               This is simply to avoid using internal db IDs for inter DB linking
+  Returntype : int
+  Exceptions : None
+  Caller     : General
+  Status     : At Risk
+
+=cut
+
+sub interdb_stable_id {
+  return $_[0]->{'interdb_stable_id'};
+}
+
+
 
 
 =head2 display_label

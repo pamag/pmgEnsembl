@@ -45,7 +45,7 @@ Patrick Meidl <meidl@ebi.ac.uk>, Ensembl core API team
 =head1 CONTACT
 
 Please post comments/questions to the Ensembl development list
-<ensembl-dev@ebi.ac.uk>
+<dev@ensembl.org>
 
 =cut
 
@@ -193,7 +193,7 @@ sub run_normal {
   &upload_stable_ids;
   &upload_archive;
 
-  # final stats and summary email
+  # final stats and mapping summary
   &analyse_results;
 }
 
@@ -482,9 +482,9 @@ sub analyse_results {
   
   $logger->info("Done.\n\n", 0, 'stamped');
 
-  # summary email
-  $logger->info("Creating summary email...\n", 0, 'stamped');
-  $analyser->create_summary_email;
+  # mapping summary
+  $logger->info("Creating mapping summary...\n", 0, 'stamped');
+  $analyser->create_mapping_summary;
   $logger->info("Done.\n", 0, 'stamped');
 }
 

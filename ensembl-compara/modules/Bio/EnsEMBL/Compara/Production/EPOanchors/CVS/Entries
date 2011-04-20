@@ -1,8 +1,9 @@
-/AnchorAlign.pm/1.4/Wed Apr  1 10:43:57 2009//Tbranch-ensembl-60
-/ExonerateAnchors.pm/1.3/Fri Jan 22 10:52:47 2010//Tbranch-ensembl-60
-/FilterAnchors.pm/1.1/Thu Jun 26 10:58:11 2008//Tbranch-ensembl-60
-/GetBlastzOverlaps.pm/1.2/Thu Jul  3 16:04:57 2008//Tbranch-ensembl-60
-/RemoveAnchorOverlaps.pm/1.4/Tue Oct 20 12:42:18 2009//Tbranch-ensembl-60
-/TrimAnchorAlign.pm/1.1/Wed Apr  1 17:04:51 2009//Tbranch-ensembl-60
-/TrimStoreAnchors.pm/1.3/Fri Oct 16 10:42:53 2009//Tbranch-ensembl-60
+/AnchorAlign.pm/1.5/Wed Mar 23 16:17:49 2011//Tbranch-ensembl-62
+/ExonerateAnchors.pm/1.3/Fri Jan 22 10:52:47 2010//Tbranch-ensembl-62
+/FilterAnchors.pm/1.1/Thu Jun 26 10:58:11 2008//Tbranch-ensembl-62
+/GetBlastzOverlaps.pm/1.2/Thu Jul  3 16:04:57 2008//Tbranch-ensembl-62
+/HMMerAnchors.pm/1.1/Wed Mar 23 16:21:53 2011//Tbranch-ensembl-62
+/RemoveAnchorOverlaps.pm/1.4/Tue Oct 20 12:42:18 2009//Tbranch-ensembl-62
+/TrimAnchorAlign.pm/1.1/Wed Apr  1 17:04:51 2009//Tbranch-ensembl-62
+/TrimStoreAnchors.pm/1.3/Fri Oct 16 10:42:53 2009//Tbranch-ensembl-62
 D

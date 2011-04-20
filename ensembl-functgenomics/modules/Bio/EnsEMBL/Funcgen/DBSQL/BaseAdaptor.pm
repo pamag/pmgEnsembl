@@ -1,10 +1,26 @@
 
 #
-# BioPerl module for Bio::EnsEMBL::Funcgen::DBSQL::BaseAdaptor
-##
-# You may distribute this module under the same terms as perl itself
+# Perl module for Bio::EnsEMBL::Funcgen::DBSQL::BaseAdaptor
+#
 
-# POD documentation - main docs before the code
+=head1 LICENSE
+
+  Copyright (c) 1999-2011 The European Bioinformatics Institute and
+  Genome Research Limited.  All rights reserved.
+
+  This software is distributed under a modified Apache license.
+  For license details, please see
+
+    http://www.ensembl.org/info/about/code_licence.html
+
+=head1 CONTACT
+
+  Please email comments or questions to the public Ensembl
+  developers list at <ensembl-dev@ebi.ac.uk>.
+
+  Questions may also be sent to the Ensembl help desk at
+  <helpdesk@ensembl.org>.
+
 
 =head1 NAME
 
@@ -22,26 +38,6 @@ Includes status methods.
 =head1 SEE ALSO
 
 Bio::EnsEMBL::DBSQL::BaseAdaptor
-
-
-=head1 LICENSE
-
-  Copyright (c) 1999-2009 The European Bioinformatics Institute and
-  Genome Research Limited.  All rights reserved.
-
-  This software is distributed under a modified Apache license.
-  For license details, please see
-
-    http://www.ensembl.org/info/about/code_licence.html
-
-=head1 CONTACT
-
-  Please email comments or questions to the public Ensembl
-  developers list at <ensembl-dev@ebi.ac.uk>.
-
-  Questions may also be sent to the Ensembl help desk at
-  <helpdesk@ensembl.org>.
-
 
 =cut
 
@@ -239,22 +235,15 @@ sub status_to_constraint{
 sub _test_funcgen_table{
   my ($self, $obj) = @_;
 
-  if(! $obj || 
-     (ref($obj) !~ /Bio::EnsEMBL::Funcgen/) ||
-     (ref($obj) =~ /::DBSQL::/)){
-    throw("Need to specifiy a Bio::EnsEMBL::Funcgen::\"OBJECT\"");
-  }
+  #Can we change this to is_stored_and_valid for a Storable?
+  $self->db->is_stored_and_valid('Bio::EnsEMBL::Funcgen::Storable', $obj);
+  #Does this test for ad
 
-  throw("Cannot test state of unstored object: $obj") if (! $obj->is_stored($self->db()));
-
-  my @tables = $self->_tables;
+  my @tables = $obj->adaptor->_tables;
 
   my ($table) = @{$tables[0]};
-  #ExpreimetnalSubSet fix, as doesn't have own adaptor
-  $table = 'experimental_subset' if $obj->isa('Bio::EnsEMBL::Funcgen::ExperimentalSubset') || $obj->isa('Bio::EnsEMBL::Funcgen::InputSubset');
-
-
-  #my $table = ${$obj->adaptor->_tables()}[0];
+  #InputSubSet fix, as doesn't have own adaptor
+  $table = 'input_subset' if $obj->isa('Bio::EnsEMBL::Funcgen::InputSubset');
 
   return $table || $self->throw("Cannot identify table name from $obj adaptor");
 }
@@ -297,7 +286,7 @@ sub fetch_all_states{
   Example    : if($status_a->has_stored_status('IMPORTED', $array){ ... skip import ... };
   Description: Tests wether a given object has a given state
   Returntype : BOOLEAN
-  Exceptions : Throws if Storable not passed or stored
+  Exceptions : None
   Caller     : Bio::EnsEMBL::Funcgen::BaseAdaptor
   Status     : At risk
 
@@ -312,11 +301,6 @@ sub has_stored_status{
 
   #Only used for set_status, merge with set_status?
   my $status_id = $self->_get_status_name_id($state);
-
-  if (! (ref($obj) && $obj->isa("Bio::EnsEMBL::Funcgen::Storable") && $obj->dbID())){
-	throw("Must pass a stored Bio::EnsEMBL::Funcgen::Storable");
-  }
-
   my $table = $self->_test_funcgen_table($obj);
  
 
@@ -341,8 +325,7 @@ sub has_stored_status{
   Example    : $status_a->store_status('IMPORTED', $array_chip);
   Description: Sets a state for a given object
   Returntype : None
-  Exceptions : Warns if state already set(not necessarily stored)
-               Throws is status name is not already stored.
+  Exceptions : None
   Caller     : general
   Status     : At risk - Move to Status.pm?
 
@@ -353,30 +336,15 @@ sub store_status{
   my ($self, $state, $obj) = @_;
 
   my $sql;
-  $self->db->is_stored_and_valid('Bio::EnsEMBL::Funcgen::Storable', $obj);
+  my $table = $self->_test_funcgen_table($obj);
 
-
-  if($self->has_stored_status($state, $obj)){
-    warn("$obj with dbID ".$obj->dbID()." already has status $state set\n");
-	#Commented this out as this can cause warnings when updating FeatureSets based on InputSets
-  }
-  else{
+  if(! $self->has_stored_status($state, $obj)){
     my $status_id = $self->_get_status_name_id($state);
 
     if(! $status_id){
       throw("$state is not a valid status_name for $obj:\t".$obj->dbID);
-
-	  #We should warn and create the status here as this is an easy post import fix
-	  #rather than failing after processing and import
-	  #warning should be added to post import summary for visibility
-	  #Can't add to log report from here!
-
-      #$sql = "INSERT into status_name(name) values('$state')";
-      #$self->db->dbc->do($sql);
-      #$status_id = $self->_get_status_name_id($state);
     }
 
-	my $table = $self->_test_funcgen_table($obj);
 	$sql = "INSERT into status(table_id, table_name, status_name_id) VALUES('".$obj->dbID()."', '$table', '$status_id')";
 	$self->db->dbc->do($sql);
 
@@ -398,7 +366,6 @@ sub store_status{
   Exceptions : Warns if storable does not have state
                Throws is status name is not valid
                Throws if not state passed
-               Throws if Storable is not valid and stored
   Caller     : General
   Status     : At Risk
 
@@ -409,12 +376,11 @@ sub revoke_status{
   my ($self, $state, $storable) = @_;
 
   throw('Must provide a status name') if(! defined $state);
-  throw('Must pass a Bio::EnsEMBL::Funcgen::Storable') if(! $storable->isa("Bio::EnsEMBL::Funcgen::Storable"));
- 
-  my $status_id = $self->_get_status_name_id($state);
   my $table_name = $self->_test_funcgen_table($storable);
-  #hardcode for ExperimentalSubset as this uses the ExperimentalSetAdaptor
-  $table_name = 'experimental_subset' if $storable->isa('Bio::Ensembl::Funcgen:ExperimentalSubset');
+  my $status_id = $self->_get_status_name_id($state);
+  
+  #hardcode for InputSubset
+  $table_name = 'input_subset' if $storable->isa('Bio::Ensembl::Funcgen:InputSubset');
  
 
   if(! $self->has_stored_status($state, $storable)){
@@ -460,8 +426,6 @@ sub revoke_status{
 
 sub revoke_states{
   my ($self, $storable) = @_;
-
-  $self->db->is_stored_and_valid('Bio::EnsEMBL::Funcgen::Storable', $storable);
  
   my $table_name = $self->_test_funcgen_table($storable);
 

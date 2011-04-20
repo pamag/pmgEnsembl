@@ -175,6 +175,7 @@ CREATE TABLE `anchor_align` (
   `score` float default NULL,
   `num_of_organisms` smallint(5) unsigned default NULL,
   `num_of_sequences` smallint(5) unsigned default NULL,
+  `evalue` varchar(10) default NULL,
   `anchor_status` int(10) default NULL,
   PRIMARY KEY  (`anchor_align_id`),
   KEY `anchor_id_mlss_id` (`anchor_id`,`method_link_species_set_id`)
@@ -230,6 +231,15 @@ CREATE TABLE peptide_align_feature_prod (
   PRIMARY KEY (peptide_align_feature_id)
 ) MAX_ROWS = 300000000 AVG_ROW_LENGTH = 133 COLLATE=latin1_swedish_ci PARTITION BY LINEAR HASH(peptide_align_feature_id) PARTITIONS 50;
 
+-- ----------------------------------------------------------------------------------------------
+--
+-- This is a temporary table used by ConstrainedElementAdaptor to create unique constrained_element_ids
+--
+
+CREATE TABLE constrained_element_production (
+       constrained_element_id bigint unsigned NOT NULL AUTO_INCREMENT, # unique internal id,
+       PRIMARY KEY constrained_element_id (constrained_element_id)
+) ENGINE=InnoDB;
 
 ## These are non-coding RNA pipeline specific tables:
 
@@ -281,4 +291,5 @@ CREATE TABLE cmsearch_hit (
   evalue double DEFAULT NULL,
   PRIMARY KEY (hit_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=latin1;
+
 

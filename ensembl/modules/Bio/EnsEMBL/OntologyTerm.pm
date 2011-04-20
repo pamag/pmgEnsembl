@@ -1,6 +1,6 @@
 =head1 LICENSE
 
-  Copyright (c) 1999-2010 The European Bioinformatics Institute and
+  Copyright (c) 1999-2011 The European Bioinformatics Institute and
   Genome Research Limited.  All rights reserved.
 
   This software is distributed under a modified Apache license.
@@ -47,6 +47,9 @@ use base qw( Bio::EnsEMBL::Storable );
   Arg [-ACCESSION]  : String
                       The accession of the ontology term.
 
+  Arg [-ONTOLOGY]   : String
+                      The ontology that the term belongs to.
+
   Arg [-NAMESPACE]  : String
                       The namespace of the ontology term.
 
@@ -60,6 +63,9 @@ use base qw( Bio::EnsEMBL::Storable );
   Arg [-DEFINITION] : (optional) String
                       The definition of the ontology term.
 
+  Arg [-SYNONYMS]   : (optional) Listref of strings
+                      The synonyms of this term.
+
   Arg               : Further arguments required for parent class
                       Bio::EnsEMBL::Storable.
 
@@ -68,15 +74,19 @@ use base qw( Bio::EnsEMBL::Storable );
   Example       :
 
     my $term = Bio::EnsEMBL::OntologyTerm->new(
-      '-accession'  => 'GO:0030326',
+      '-accession'  => 'GO:0021785',
+      '-ontology'   => 'GO',
       '-namespace'  => 'biological_process',
-      '-name'       => 'embryonic limb morphogenesis',
-      '-definition' => 'The process, occurring in the embryo, '
-        . 'by which the anatomical structures of the limb '
-        . 'are generated and organized. '
-        . 'Morphogenesis pertains to the creation of form. '
-        . 'A limb is an appendage of an animal '
-        . 'used for locomotion or grasping.'
+      '-name'       => 'branchiomotor neuron axon guidance',
+      '-definition' => 'The process in which a branchiomotor '
+        . 'neuron growth cone is directed to a specific target site. '
+        . 'Branchiomotor neurons are located in the hindbrain and '
+        . 'innervate branchial arch-derived muscles that control jaw '
+        . 'movements, facial expression, the larynx, and the pharynx.',
+      '-synonyms' => [ 'BMN axon guidance',
+                       'branchial motor axon guidance',
+                       'special visceral motor neuron axon guidance' ]
+
         # ... other arguments required by Bio::EnsEMBL::Storable.
     );
 
@@ -89,11 +99,13 @@ sub new {
 
   my $this = $proto->SUPER::new(@_);
 
-  my ( $accession, $namespace, $name, $definition, $subsets ) =
-    rearrange(
-    [ 'ACCESSION', 'NAMESPACE', 'NAME', 'DEFINITION', 'SUBSETS' ], @_ );
+  my ( $accession, $ontology, $namespace, $name, $definition, $subsets )
+    = rearrange( [ 'ACCESSION',  'ONTOLOGY', 'NAMESPACE', 'NAME',
+                   'DEFINITION', 'SUBSETS' ],
+                 @_ );
 
   $this->{'accession'}  = $accession;
+  $this->{'ontology'}   = $ontology;
   $this->{'namespace'}  = $namespace;
   $this->{'name'}       = $name;
   $this->{'definition'} = $definition;
@@ -136,7 +148,7 @@ sub accession {
 
 sub ontology {
   my ($this) = @_;
-  return $this->adaptor()->ontology();
+  return $this->{'ontology'};
 }
 
 =head2 namespace
@@ -188,6 +200,30 @@ sub name {
 sub definition {
   my ($this) = @_;
   return $this->{'definition'};
+}
+
+=head2 synonyms
+
+  Arg           : None
+
+  Description   : Returns the list of synonyms defined for this term
+                  (if any).
+
+  Example       : my @synonyms = @{ $term->synonyms() };
+
+  Return type   : Listref of strings
+
+=cut
+
+sub synonyms {
+  my ($this) = @_;
+
+  if ( !exists( $this->{'synonyms'} ) ) {
+    $this->{'synonyms'} =
+      $this->adaptor()->_fetch_synonyms_by_dbID( $this->dbID() );
+  }
+
+  return $this->{'synonyms'};
 }
 
 =head2 subsets

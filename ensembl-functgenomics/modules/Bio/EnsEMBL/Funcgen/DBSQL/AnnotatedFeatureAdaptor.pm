@@ -1,7 +1,25 @@
 #
 # Ensembl module for Bio::EnsEMBL::DBSQL::Funcgen::AnnotatedFeatureAdaptor
 #
-# You may distribute this module under the same terms as Perl itself
+
+=head1 LICENSE
+
+  Copyright (c) 1999-2011 The European Bioinformatics Institute and
+  Genome Research Limited.  All rights reserved.
+
+  This software is distributed under a modified Apache license.
+  For license details, please see
+
+    http://www.ensembl.org/info/about/code_licence.html
+
+=head1 CONTACT
+
+  Please email comments or questions to the public Ensembl
+  developers list at <ensembl-dev@ebi.ac.uk>.
+
+  Questions may also be sent to the Ensembl help desk at
+  <helpdesk@ensembl.org>.
+
 
 =head1 NAME
 
@@ -19,18 +37,6 @@ my $features = $afa->fetch_all_by_Slice($slice);
 
 The AnnotatedFeatureAdaptor is a database adaptor for storing and retrieving
 AnnotatedFeature objects.
-
-=head1 AUTHOR
-
-This module was created by Nathan Johnson.
-
-This module is part of the Ensembl project: http://www.ensembl.org/
-
-=head1 CONTACT
-
-Post comments or questions to the Ensembl development list: ensembl-dev@ebi.ac.uk
-
-=head1 METHODS
 
 =cut
 
@@ -59,12 +65,12 @@ $true_tables{annotated_feature} = [['annotated_feature', 'af'], ['feature_set', 
   Arg [2]    : Bio::EnsEMBL::Funcgen::Experiment
   Arg [3]    : (optional) string - logic name
   Example    : my $slice = $sa->fetch_by_region('chromosome', '1');
-               my $features = $ofa->fetch_by_Slice_experiment_id($slice, $exp);
+               my $features = $ofa->fetch__all_by_Slice_Experiment($slice, $exp);
   Description: Retrieves a list of features on a given slice, specific for a given experiment.
   Returntype : Listref of Bio::EnsEMBL::AnnotatedFeature objects
   Exceptions : Throws if no Experiment object defined
   Caller     : General
-  Status     : At Risk
+  Status     : At Risk: Currently NOT working
 
 =cut
 
@@ -90,13 +96,13 @@ sub fetch_all_by_Slice_Experiment {
 =head2 fetch_all_by_Slice_FeatureSet
 
   Arg [1]    : Bio::EnsEMBL::Slice
-  Arg [2]    : Bio::EnsEMBL::Funcgen::Experiment
+  Arg [2]    : Bio::EnsEMBL::Funcgen::FeatureSet
   Arg [3]    : (optional) string - logic name
   Example    : my $slice = $sa->fetch_by_region('chromosome', '1');
-               my $features = $ofa->fetch_by_Slice_experiment_id($slice, $exp);
-  Description: Retrieves a list of features on a given slice, specific for a given experiment.
+               my $features = $ofa->fetch_by_Slice_FeatureSet($slice, $fset);
+  Description: Retrieves a list of features on a given slice, specific for a given feature set.
   Returntype : Listref of Bio::EnsEMBL::AnnotatedFeature objects
-  Exceptions : Throws if no Experiment object defined
+  Exceptions : Throws if no valid FeatureSet object defined
   Caller     : General
   Status     : At Risk
 
@@ -109,9 +115,11 @@ sub fetch_all_by_Slice_FeatureSet {
   if (! ($fset && $fset->isa("Bio::EnsEMBL::Funcgen::FeatureSet"))){
     throw("Need to pass a valid Bio::EnsEMBL::Funcgen::FeatureSet");
   }
-    
-  my $constraint = qq( af.feature_set_id ='$fset->dbID()' );
   
+  my $id = $fset->dbID();
+  my $constraint = qq( af.feature_set_id='$id' );
+
+  print $constraint."\n";
   
   return $self->SUPER::fetch_all_by_Slice_constraint($slice, $constraint);
 }
@@ -475,12 +483,12 @@ sub store{
 =head2 fetch_all_by_associated_MotifFeature
 
   Arg [1]    : Bio::EnsEMBL::Funcgen::MotifFeature
-  Example    : my $assoc_afs = $af_adaptor->fetch_all_by_associated_SetFeature($ext_feature);
+  Example    : my $assoc_afs = $af_adaptor->fetch_all_by_associated_MotifFeature($motif_feature);
   Description: Fetches all associated AnnotatedFeatures for a given MotifFeature. 
   Returntype : ARRAYREF of Bio::EnsEMBL::Funcgen::AnnotatedFeature objects
   Exceptions : Throws if arg is not valid or stored
   Caller     : General
-  Status     : At risk - move to TranscriptionFactorFeatureAdaptor
+  Status     : At risk
 
 =cut
 

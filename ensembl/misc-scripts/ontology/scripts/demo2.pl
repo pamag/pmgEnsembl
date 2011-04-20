@@ -48,11 +48,11 @@ my $registry = 'Bio::EnsEMBL::Registry';
 $registry->load_registry_from_db( '-host' => 'ensembldb.ensembl.org',
                                   '-user' => 'anonymous' );
 
-my $accession = 'GO:0030326';
+my $accession = 'GO:0044430';    # cytoskeletal part
 
-# Get a GO term adaptor.
+# Get an ontology term adaptor.
 my $go_adaptor =
-  $registry->get_adaptor( 'Multi', 'Ontology', 'GOTerm' );
+  $registry->get_adaptor( 'Multi', 'Ontology', 'OntologyTerm' );
 
 my $term = $go_adaptor->fetch_by_accession($accession);
 
@@ -62,4 +62,4 @@ my %chart = %{ $go_adaptor->_fetch_ancestor_chart($term) };
 # fetched.
 process_term( \%chart, $term );
 
-# $Id: demo2.pl,v 1.4 2010-06-15 09:40:26 ak4 Exp $
+# $Id: demo2.pl,v 1.5 2011-01-06 14:07:25 ak4 Exp $

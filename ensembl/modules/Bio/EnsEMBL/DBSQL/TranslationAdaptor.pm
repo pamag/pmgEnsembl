@@ -1,6 +1,6 @@
 =head1 LICENSE
 
-  Copyright (c) 1999-2010 The European Bioinformatics Institute and
+  Copyright (c) 1999-2011 The European Bioinformatics Institute and
   Genome Research Limited.  All rights reserved.
 
   This software is distributed under a modified Apache license.
@@ -203,13 +203,7 @@ sub fetch_all_alternative_by_Transcript {
 sub fetch_by_Transcript {
   my ( $self, $transcript ) = @_;
 
-  if (
-    !(
-      ref($transcript) && $transcript->isa('Bio::EnsEMBL::Transcript') )
-    )
-  {
-    throw('Bio::EnsEMBL::Transcript argument is required.');
-  }
+  assert_ref( $transcript, 'Bio::EnsEMBL::Transcript' );
 
   my $lsi_created_date =
     $self->db()->dbc()->from_date_to_seconds('tlsi.created_date');
@@ -290,12 +284,15 @@ sub fetch_by_Transcript {
                identifier originates.
   Example    : my @translations =
                   @{ $trl_adaptor->fetch_all_by_external_name('BRCA2') };
+               my @many_translations = 
+                  @{ $trl_adaptor->fetch_all_by_external_name('BRCA%') };
   Description: Retrieves a list of translations fetched via an
                external identifier.  Note that this may not be a
                particularly useful method, because translations
                do not make much sense out of the context of
                their transcript.  It may be better to use the
                TranscriptAdaptor::fetch_all_by_external_name instead.
+               SQL wildcards % and _ are supported in the $external_name
   Returntype : reference to a list of Translations
   Exceptions : none
   Caller     : general
@@ -351,10 +348,8 @@ sub fetch_all_by_external_name {
 sub fetch_all_by_GOTerm {
   my ( $self, $term ) = @_;
 
-  if ( !ref($term)
-    || !$term->isa('Bio::EnsEMBL::OntologyTerm')
-    || $term->ontology() ne 'GO' )
-  {
+  assert_ref( $term, 'Bio::EnsEMBL::OntologyTerm' );
+  if ( $term->ontology() ne 'GO' ) {
     throw('Argument is not a GO term');
   }
 
@@ -362,7 +357,7 @@ sub fetch_all_by_GOTerm {
 
   my %unique_dbIDs;
   foreach my $accession ( map { $_->accession() }
-    ( $term, @{ $term->descendants() } ) )
+                          ( $term, @{ $term->descendants() } ) )
   {
     my @ids =
       $entryAdaptor->list_translation_ids_by_extids( $accession, 'GO' );
@@ -394,8 +389,7 @@ sub fetch_all_by_GOTerm {
   Example   :
 
     @genes =
-      @{ $gene_adaptor->fetch_all_by_GOTerm_accession(
-        'GO:0030326') };
+      @{ $gene_adaptor->fetch_all_by_GOTerm_accession('GO:0030326') };
 
   Description   : Retrieves a list of genes that are associated with
                   the given GO term, or with any of its descendent
@@ -422,7 +416,7 @@ sub fetch_all_by_GOTerm_accession {
 
   my $goAdaptor =
     Bio::EnsEMBL::Registry->get_adaptor( 'Multi', 'Ontology',
-    'GOTerm' );
+                                         'OntologyTerm' );
 
   my $term = $goAdaptor->fetch_by_accession($accession);
 
@@ -663,24 +657,40 @@ sub list_stable_ids {
 =cut
 
 sub fetch_by_dbID {
-   my ($self,$dbID, $transcript) = @_;
+  my ( $self, $dbID, $transcript ) = @_;
 
-   if($transcript) {
-     deprecate("Use of fetch_by_dbID with a Transcript argument is deprecated."
+  if ($transcript) {
+    deprecate(   "Use of fetch_by_dbID "
+               . "with a Transcript argument is deprecated."
                . "Use fetch_by_Transcript instead." );
-   }
+  }
 
-   if(!$dbID) {
-     throw("dbID argument is required");
-   }
+  if ( !defined($dbID) ) {
+    throw("dbID argument is required");
+  }
 
-   my $transcript_adaptor = $self->db()->get_TranscriptAdaptor();
-   $transcript = $transcript_adaptor->fetch_by_translation_id($dbID);
+  my $transcript_adaptor = $self->db()->get_TranscriptAdaptor();
+  $transcript = $transcript_adaptor->fetch_by_translation_id($dbID);
 
-   return undef if(!$transcript);
+  if ( defined($transcript) ) {
+    my $translation = $self->fetch_by_Transcript($transcript);
 
-   return $self->fetch_by_Transcript($transcript);
-}
+    if ( defined($translation) ) {
+      return $translation;
+    }
+
+    my @alt_translations =
+      @{ $self->fetch_all_by_Transcript($transcript) };
+
+    foreach my $alt_translation (@alt_translations) {
+      if ( $alt_translation->dbID() == $dbID ) {
+        return $alt_translation;
+      }
+    }
+  }
+
+  return undef;
+} ## end sub fetch_by_dbID
 
 
 =head2 fetch_by_stable_id

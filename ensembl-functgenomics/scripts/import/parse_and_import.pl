@@ -1,5 +1,23 @@
-#!/software/bin/perl -w
+#!/usr/bin/env perl
 
+=head1 LICENSE
+
+
+  Copyright (c) 1999-2011 The European Bioinformatics Institute and
+  Genome Research Limited.  All rights reserved.
+
+  This software is distributed under a modified Apache license.
+  For license details, please see
+
+    http://www.ensembl.org/info/about/code_licence.html
+
+=head1 CONTACT
+
+  Please email comments or questions to the public Ensembl
+  developers list at <ensembl-dev@ebi.ac.uk>.
+
+  Questions may also be sent to the Ensembl help desk at
+  <helpdesk@ensembl.org>.
 
 =head1 NAME
 
@@ -103,26 +121,6 @@
 
 B<This program> take several options, including an definitions file to parse and import array data into the ensembl-efg DB
 
-
-=head1 LICENSE
-
-  Copyright (c) 1999-2009 The European Bioinformatics Institute and
-  Genome Research Limited.  All rights reserved.
-
-  This software is distributed under a modified Apache license.
-  For license details, please see
-
-    http://www.ensembl.org/info/about/code_licence.html
-
-=head1 CONTACT
-
-  Please email comments or questions to the public Ensembl
-  developers list at <ensembl-dev@ebi.ac.uk>.
-
-  Questions may also be sent to the Ensembl help desk at
-  <helpdesk@ensembl.org>.
-
-
 =cut
 
 
@@ -147,7 +145,7 @@ use File::Path;
 use Bio::EnsEMBL::Funcgen::Importer;
 use Bio::EnsEMBL::Funcgen::Utils::EFGUtils qw (strip_param_args generate_slices_from_names strip_param_flags);
 use Bio::EnsEMBL::Registry;
-use Bio::EnsEMBL::Utils::Exception qw( throw warning );
+use Bio::EnsEMBL::Utils::Exception qw( warning );
 use strict;
 
 $| = 1;#autoflush
@@ -238,10 +236,10 @@ GetOptions (
 			"release=s"       => \$release,
 		
 			#Directory overrides
-			"data_root=s"  => \$data_dir,
-			"input_dir=s"  => \$input_dir,
-			"output_dir=s" => \$output_dir,
-		
+			"data_root=s"       => \$data_dir,
+			"input_dir=s"       => \$input_dir,
+			"output_dir=s"      => \$output_dir,
+
 			#Other params
 			"help|?"       => \$help,
 			"man|m"        => \$man,
@@ -262,7 +260,7 @@ print "parse_and_import.pl @tmp_args\n";
 
 
 if($batch_job && ! defined $ENV{'LSB_JOBINDEX'}){
-  throw('Your -_batch_job is not running on the farm. Did you try and set this internal parameter manually?');
+  die('Your -_batch_job is not running on the farm. Did you try and set this internal parameter manually?');
 }
 
 
@@ -271,7 +269,7 @@ if (@ARGV){
 			 -message => "You have specified unknown options/args:\t@ARGV");
 }
 
-throw("Nimblegen import does not support cmdline defined result files") if (@result_files && uc($vendor) eq "NIMBELGEN");
+die("Nimblegen import does not support cmdline defined result files") if (@result_files && uc($vendor) eq "NIMBELGEN");
 
 #Need to add (primary) design_type and description, or add to defs file?
 
@@ -286,7 +284,7 @@ die('Must provide a -species parameter') if ! defined $species;
 
 
 #log/debug files fail in Helper without this
-$output_dir  = $data_dir."/output/${dbname}/".uc($vendor)."/".$name;
+$output_dir  ||= $data_dir."/output/${dbname}/".uc($vendor)."/".$name;
 system("mkdir -p $output_dir -m 0755");
 chmod 0755, $output_dir;
 
@@ -352,7 +350,7 @@ if($input_feature_class eq 'result' &&
 }
 
 if(@slices && ! $exp_set){
-  throw('-slices parameter is only valid for -input_set import');
+  die('-slices parameter is only valid for -input_set import');
 }
 
 
@@ -405,7 +403,7 @@ my $Imp = Bio::EnsEMBL::Funcgen::Importer->new
    -verbose     => $verbose,
    -input_dir   => $input_dir,
    -exp_date     => $exp_date,
-   -result_files   => \@result_files,
+   -result_files    => \@result_files,
    -total_features => $total_features,
    -old_dvd_format => $old_dvd_format,
    -ucsc_coords => $ucsc,
@@ -420,7 +418,6 @@ print "The log files and output can be found here:\t".$Imp->get_dir('output')."\
 
 #Need to think about how best to handle this job submission
 #Convert to pipeline?
-#Also need skip slices here
 #-top_level_slices
 #-farm
 #-no_farm
@@ -439,7 +436,7 @@ if(@slices || $input_feature_class eq 'result'){
 	$Imp->log("No slices defined defaulting to current toplevel");
   }
 
-  @slices = @{&generate_slices_from_names($slice_adaptor, \@slices, \@skip_slices, 1, 1, 1)};#toplevel, nonref, incdups
+  @slices = @{&generate_slices_from_names($slice_adaptor, \@slices, \@skip_slices, 1, undef, 1)};#toplevel, nonref, incdups
   #inc dups here for now for loading Y
   #Until we support PAR/HAP regions properly
 }
@@ -475,15 +472,20 @@ if((defined $input_feature_class) &&
   print "Preparing data...\n";
   $Imp->read_and_import_data('prepare');
   $prepared = ' -_prepared ';
-
   #This prevents 'No space left on device' errors about /tmp space
   #Parses, filters and sorts input to tmp file
-  #Slight overhead in certain circumstances, But is cleaner and more likely to 
-  #fail here instead of in mutiple batch jobs
+  #Slight overhead in certain circumstances, But is cleaner and more 
+  #likely to fail here instead of in mutiple batch jobs
   #Could output to seq_region named files which would speed up 2nd stage parsing
   #Delete immediately after use, or save and md5?
   #Do we need to put these in a large file stripe dir?
   #Same with mapping pipeline?
+
+
+  #Now reset the slices based on what we have seen in the data
+  #This will prevent 'empty' collection blobs
+  @slices = values(%{$Imp->slice_cache});
+  $Imp->slices(\@slices);
 
   if(! ($input_file = $Imp->output_file)){
 
@@ -527,6 +529,11 @@ else{
   
 }
 
+
+#Can we change the logic of these tests to allow passing of _total_features and _prepared
+#to avoid prepare step?
+#This would also require regenerating the file name
+
 ### SUBMIT/RUN JOB(S) 
 
 if($farm &&           ###BSUB JOBS
@@ -550,10 +557,13 @@ if($farm &&           ###BSUB JOBS
   #redefine result file as prepared file
   #set new slices as those which have been seen in the input
   #so we don't have to run jobs for all toplevel seq_regions
-  my @args = @{&strip_param_args(\@tmp_args, ('log_file', 'debug_file', 'result_files', 'slices', 'skip_slices'))};
+  my @args = @{&strip_param_args(\@tmp_args, ('log_file', 'debug_file', 
+											  'result_files', 'slices', 
+											  'skip_slices'))};
   #no log to avoid overwriting log file
   #output in lsf files
   #should probably change this by setting log dependant on batch_job in Importer
+
   my $cmd = "time perl $ENV{EFG_SRC}/scripts/import/parse_and_import.pl -_on_farm -no_log $batch_job @args $input_file $prepared $total_feats $slices";
 
   #sub slices for keys in slice cache? This will lose any incomplete slice names?
@@ -581,20 +591,24 @@ if($farm &&           ###BSUB JOBS
 
   
 
-  my $rusage = "-R \"select[($lsf_host<=600)] rusage[${lsf_host}=12:duration=5]\"";
-  #-R "select[mem>4000] rusage[mem=4000] -M 4000000"? 
+  my $rusage = "-R \"select[($lsf_host<=600)] rusage[${lsf_host}=12:duration=10]\" ".
+	"-R \"select[mem>6000] rusage[mem=6000]\" -M 6000000";
+  #Upped the duration as the first stage is to preprocess the file and will not show load on the server
+
 
   my $bsub_cmd;
 
   if(@slices){
+	#limit concurrent batch jobs, added as lsf throttling not working
+   	#warn "HARDCODING job limit a 2/array";
+	#$bsub_cmd="bsub $rusage -q $queue -J \"${job_name}[1-".scalar(@slices)."]%2\" -o ${output_dir}/${job_name}.".'%J.%I'.".out -e ${output_dir}/${job_name}.".'%J.%I'.".err $cmd";
 	$bsub_cmd="bsub $rusage -q $queue -J \"${job_name}[1-".scalar(@slices)."]\" -o ${output_dir}/${job_name}.".'%J.%I'.".out -e ${output_dir}/${job_name}.".'%J.%I'.".err $cmd";
+	
   }
   else{
 	$bsub_cmd="bsub $rusage -q $queue -J \"${job_name}\" -o ${output_dir}/${job_name}.out -e ${output_dir}/${job_name}.err $cmd";
   }
 
-  #Still getting sort fail!!! Uncaught!!!!
-  #Need to be able to catch this
 
   $Imp->log("Submitting $job_name\n$bsub_cmd");
   $Imp->log("Slices:\n\t".join("\n\t", (map $_->name, @slices))."\n") if @slices;
@@ -616,7 +630,15 @@ else{ ### DO THE IMPORT
   print "Importing data...\n";
 
   @slices = ($slices[($ENV{LSB_JOBINDEX} - 1)]) if $batch_job;
+
+  #warn "LSB_JOBINDEX is ".$ENV{LSB_JOBINDEX};
+
+  #warn "New slices are:\t@slices";
+
   $Imp->slices(\@slices) if @slices;
+
+  #warn "Importer Slices are ".join(', ', @{$Imp->slices(\@slices)});
+
   $Imp->register_experiment();
 }
 

@@ -78,7 +78,11 @@ use Bio::EnsEMBL::Compara::Production::Projection::Writer::MultipleWriter;
 
 sub new_without_hive {
   my ($class, @params) = @_;
+  
   my $self = bless {}, $class;
+  
+  my $job = Bio::EnsEMBL::Hive::AnalysisJob->new();
+  $self->input_job($job);
   
   my ($projection_engine, $target_genome_db, $write_dba, $file, $debug) = rearrange(
     [qw(projection_engine target_genome_db write_dba file debug)], 
@@ -130,7 +134,9 @@ Expect to see the following params:
 
 =item file - String indicating a directory to write to (auto generated file name) or a target file name. We do not automatically create directories
 
-=item engine_params = Give optional parameters to the engine if required
+=item engine_params - Give optional parameters to the engine if required
+
+=item source - The source of the DBEntries to use; specify the source_name as used in member
 
 =back
 
@@ -149,9 +155,12 @@ sub fetch_input {
   #Building the engine
   my $source_gdb = $gdb_a->fetch_by_dbID($self->param('source_genome_db_id'));
   my $log = Bio::EnsEMBL::Compara::Production::Projection::RunnableDB::RunnableLogger->new(-DEBUG => $self->debug());
+  
   my $params = { -GENOME_DB => $source_gdb, -DBA => $compara_dba, -LOG => $log };
   $params->{-METHOD_LINK} = $self->param('method_link') if $self->param('method_link');
+  $params->{-SOURCE} = $self->param('source') if $self->param('source');
   %{$params} = %{$self->param('engine_params')} if $self->param('engine_params');
+  
   my $engine = $self->_build_engine($params);
   $self->projection_engine($engine);
   
@@ -215,9 +224,9 @@ sub projection_engine {
   my ($self, $projection_engine) = @_;
   if(defined $projection_engine) {
     assert_ref($projection_engine, 'Bio::EnsEMBL::Compara::Production::Projection::ProjectionEngine');
-    $self->{projection_engine} = $projection_engine;
+    $self->param('projection_engine', $projection_engine);
   }
-  return $self->{projection_engine};
+  return $self->param('projection_engine');
 }
 
 =head2 target_genome_db()
@@ -231,8 +240,9 @@ sub target_genome_db {
   if(defined $target_genome_db) {
     assert_ref($target_genome_db, 'Bio::EnsEMBL::Compara::GenomeDB');
     $self->{target_genome_db} = $target_genome_db;
+    $self->param('target_genome_db', $target_genome_db);
   }
-  return $self->{target_genome_db};
+  $self->param('target_genome_db');
 }
 
 =head2 projections()
@@ -244,9 +254,9 @@ The projections we have projected; an ArrayRef of Projection objects
 sub projections {
   my ($self, $projections) = @_;
   if(defined $projections && assert_ref($projections, 'ARRAY')) {
-    $self->{projections} = $projections;
+    $self->param('projections', $projections);
   }
-  return $self->{projections};
+  $self->param('projections');
 }
 
 =head2 _writer()
@@ -257,7 +267,7 @@ Returns the writer instance depending on what was given during construction.
 
 sub _writer {
   my ($self) = @_;
-  if(! defined $self->{writer}) {
+  if(! defined $self->param('writer')) {
     my $projections = $self->projections();
     my $writers = [];
     
@@ -289,11 +299,11 @@ sub _writer {
       );
     }
     else {
-      $self->{writer} = shift @{$writers};
+      $self->param('writer', shift @{$writers});
     }
   }
   
-  return $self->{writer};
+  return $self->param('writer');
 }
 
 =head2 write_dba()
@@ -305,8 +315,8 @@ same as the target GenomeDB.
 
 sub write_dba {
   my ($self, $write_dba) = @_;
-  $self->{write_dba} = $write_dba if defined $write_dba;
-  return $self->{write_dba};
+  $self->param('write_dba', $write_dba) if defined $write_dba;
+  return $self->param('write_dba');
 }
 
 =head2 file()
@@ -317,8 +327,8 @@ The file or directory to write to.
 
 sub file {
   my ($self, $file) = @_;
-  $self->{file} = $file if defined $file;
-  return $self->{file};
+  $self->param('file', $file) if defined $file;
+  return $self->param('file');
 }
 
 =head2 _target_filename()

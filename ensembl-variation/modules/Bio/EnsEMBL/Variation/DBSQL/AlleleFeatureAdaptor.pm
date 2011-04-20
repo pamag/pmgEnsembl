@@ -1,3 +1,23 @@
+=head1 LICENSE
+
+ Copyright (c) 1999-2011 The European Bioinformatics Institute and
+ Genome Research Limited.  All rights reserved.
+
+ This software is distributed under a modified Apache license.
+ For license details, please see
+
+   http://www.ensembl.org/info/about/code_licence.html
+
+=head1 CONTACT
+
+ Please email comments or questions to the public Ensembl
+ developers list at <dev@ensembl.org>.
+
+ Questions may also be sent to the Ensembl help desk at
+ <helpdesk@ensembl.org>.
+
+=cut
+
 #
 # Ensembl module for Bio::EnsEMBL::Variation::DBSQL::AlleleFeatureAdaptor
 #
@@ -35,12 +55,6 @@ This adaptor provides database connectivity for AlleleFeature objects.
 Genomic locations of alleles in samples can be obtained from the 
 database using this adaptor.  See the base class BaseFeatureAdaptor for more information.
 
-=head1 AUTHOR - Daniel Rios
-
-=head1 CONTACT
-
-Post questions to the Ensembl development list ensembl-dev@ebi.ac.uk
-
 =head1 METHODS
 
 =cut
@@ -52,11 +66,12 @@ package Bio::EnsEMBL::Variation::DBSQL::AlleleFeatureAdaptor;
 
 use Bio::EnsEMBL::Variation::AlleleFeature;
 use Bio::EnsEMBL::DBSQL::BaseFeatureAdaptor;
+use Bio::EnsEMBL::Variation::DBSQL::BaseAdaptor;
 use Bio::EnsEMBL::Utils::Exception qw(throw);
 use Bio::EnsEMBL::Utils::Sequence qw(expand);
-use Bio::EnsEMBL::Variation::Utils::Sequence qw(ambiguity_code);
+use Bio::EnsEMBL::Variation::Utils::Sequence qw(strain_ambiguity_code);
 
-our @ISA = ('Bio::EnsEMBL::DBSQL::BaseFeatureAdaptor');
+our @ISA = ('Bio::EnsEMBL::Variation::DBSQL::BaseAdaptor', 'Bio::EnsEMBL::DBSQL::BaseFeatureAdaptor');
 
 
 =head2 from_IndividualSlice
@@ -139,7 +154,7 @@ sub fetch_all_by_Slice{
 			}
 			
 			#we need to check the genotypes are within the alleles of the variation
-			if ($genotypes->[$i]->start == $af->seq_region_start && (exists $alleles->{$string1} || exists $alleles->{$string2})){
+			if ($genotypes->[$i]->seq_region_start == $af->seq_region_start && (exists $alleles->{$string1} || exists $alleles->{$string2})){
 				
 				# create a clone of the AF to work with
 				my $new_af = { %$af };
@@ -159,16 +174,24 @@ sub fetch_all_by_Slice{
 					if($genotypes->[$i]->allele1 eq '-' and $genotypes->[$i]->allele1 eq '-'){
 					1;
 					}
-					$new_af->allele_string(ambiguity_code($genotypes->[$i]->allele1  . '/' . $genotypes->[$i]->allele2)); #for heterozigous alleles
+					$new_af->allele_string(strain_ambiguity_code($genotypes->[$i]->allele1  . '/' . $genotypes->[$i]->allele2)); #for heterozigous alleles
 				}
 			#	$af->allele_string($genotypes->[$i]->allele1); #if it is strain, both alleles should be the same, might be changed in the future
 				$new_af->individual($genotypes->[$i]->individual);		
 				$last_position++;
 				
+				# skip duplicates
+				if(scalar @{$new_afs}) {
+					next if
+					  $new_afs->[-1]->individual->dbID eq $new_af->individual->dbID &&
+					  $new_afs->[-1]->allele_string eq $new_af->allele_string &&
+					  $new_afs->[-1]->{_variation_feature_id} eq $new_af->{_variation_feature_id};
+				}
+				
 				push @{$new_afs},$new_af;
 			}
 			
-			elsif ($genotypes->[$i]->start < $af->seq_region_start){
+			elsif ($genotypes->[$i]->seq_region_start < $af->seq_region_start){
 				$last_position++; #this should not happen, it means the genotype has no allele feature 
 			}
 			
@@ -232,14 +255,16 @@ sub _tables{
     my $self = shift;
 
     if ($self->from_IndividualSlice){	
-	return (['variation_feature','vf'], ['individual_genotype_single_bp','ig']) if (!$self->_multiple_bp());
-	return (['variation_feature','vf'], ['individual_genotype_multiple_bp','ig']) if ($self->_multiple_bp());
+	return (['variation_feature','vf'], ['individual_genotype_single_bp','ig'], [ 'failed_variation', 'fv']) if (!$self->_multiple_bp());
+	return (['variation_feature','vf'], ['individual_genotype_multiple_bp','ig'], [ 'failed_variation', 'fv']) if ($self->_multiple_bp());
     }
     else{
-	return (['variation_feature','vf'],  ['source','s FORCE INDEX(PRIMARY)']);
+	return (['variation_feature','vf'],  ['source','s FORCE INDEX(PRIMARY)'], [ 'failed_variation', 'fv']);
     }
-
 }
+
+#ÊAdd a left join to the failed_variation table
+sub _left_join { return ([ 'failed_variation', 'fv.variation_id = vf.variation_id']); }
 
 sub _columns{
     my $self = shift;
@@ -276,7 +301,7 @@ sub _objs_from_sth{
   my %sr_cs_hash;
 
   my ($variation_id, $seq_region_id,
-      $seq_region_start,$seq_region_end, $seq_region_strand, $variation_name, $source_name, $variation_feature_id, $allele_string, $cons );
+      $seq_region_start,$seq_region_end, $seq_region_strand, $variation_name, $source_name, $variation_feature_id, $allele_string, $cons, $last_vf_id );
 
   $sth->bind_columns(\$variation_id,
 		     \$seq_region_id,\$seq_region_start,\$seq_region_end,\$seq_region_strand,
@@ -309,6 +334,10 @@ sub _objs_from_sth{
   }
 
   FEATURE: while($sth->fetch()) {
+    
+    next if (defined($last_vf_id) && $last_vf_id == $variation_feature_id);
+    $last_vf_id = $variation_feature_id;
+    
     #get the slice object
     my $slice = $slice_hash{"ID:".$seq_region_id};
     if(!$slice) {
@@ -367,6 +396,10 @@ sub _objs_from_sth{
       }
       $slice = $dest_slice;   
   }
+
+  my $overlap_consequences = [ map { $self->_overlap_consequence_for_SO_term($_) } 
+    split /,/, $cons ];
+
     #allele and sample table comes from the Compressed genotype adaptor
 #    $allele = ambiguity_code($allele) if ($self->from_IndividualSlice);
     push @features, Bio::EnsEMBL::Variation::AlleleFeature->new_fast(
@@ -375,7 +408,7 @@ sub _objs_from_sth{
 								      'strand'   => $seq_region_strand,
 								      'slice'    => $slice,
 								      'allele_string' => '',
-									  'consequence_type' => $cons,
+									  'overlap_consequences' => $overlap_consequences,
 								      'variation_name' => $variation_name,
 								      'adaptor'  => $self,
 								      'source'   => $source_name,

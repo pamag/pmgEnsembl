@@ -1,6 +1,6 @@
 =head1 LICENSE
 
-  Copyright (c) 1999-2010 The European Bioinformatics Institute and
+  Copyright (c) 1999-2011 The European Bioinformatics Institute and
   Genome Research Limited.  All rights reserved.
 
   This software is distributed under a modified Apache license.
@@ -79,7 +79,6 @@ sub fetch_by_dbID {
             xref.display_label,
             xref.version,
             exDB.dbprimary_acc_linkable,
-            exDB.display_label_linkable,
             exDB.priority,
             exDB.db_name,
             exDB.db_display_name,
@@ -110,7 +109,7 @@ sub fetch_by_dbID {
       my ( $refID,               $dbprimaryId,
            $displayid,           $version,
 	   $primary_id_linkable,
-           $display_id_linkable, $priority,
+           $priority,
            $dbname,              $db_display_name,
            $release,             $synonym,
            $info_type,           $info_text,
@@ -129,7 +128,6 @@ sub fetch_by_dbID {
                            -release             => $release,
                            -dbname              => $dbname,
                            -primary_id_linkable => $primary_id_linkable,
-                           -display_id_linkable => $display_id_linkable,
                            -priority            => $priority,
                            -db_display_name     => $db_display_name,
                            -info_type           => $info_type,
@@ -175,7 +173,6 @@ sub _get_all_dm_loc_sth {
             xref.display_label,
             xref.version,
             exDB.dbprimary_acc_linkable,
-            exDB.display_label_linkable,
             exDB.priority,
             exDB.db_name,
             exDB.db_display_name,
@@ -201,9 +198,9 @@ sub _get_all_dm_loc_sth {
   else{
     die "NO constraint???\n";
   }
-#  print "\n\n".$sql."\n";
+
   my $sth = $self->prepare($sql) || die "Could not prepare $sql";
-#  print "sth is $sth\n";  
+
   return $self->_get_all_dm($sth);
 }
 
@@ -215,7 +212,6 @@ sub _get_all_dm_sth {
             xref.display_label,
             xref.version,
             exDB.dbprimary_acc_linkable,
-            exDB.display_label_linkable,
             exDB.priority,
             exDB.db_name,
             exDB.db_display_name,
@@ -241,7 +237,6 @@ sub _get_all_dm_sth {
 
   my $sth = $self->prepare($sql) || die "Could not prepare $sql";
 
-#  print "sth is $sth\n";
   return $self->_get_all_dm($sth);
 }
 
@@ -264,7 +259,7 @@ sub _get_all_dm{
       my ( $dbID,                $dbprimaryId,
            $displayid,           $version,
            $primary_id_linkable,
-           $display_id_linkable, $priority,
+           $priority,
            $dbname,              $db_display_name,
            $release,             $synonym,
            $info_type,           $info_text,
@@ -283,7 +278,6 @@ sub _get_all_dm{
                            -release             => $release,
                            -dbname              => $dbname,
                            -primary_id_linkable => $primary_id_linkable,
-                           -display_id_linkable => $display_id_linkable,
                            -priority            => $priority,
                            -db_display_name     => $db_display_name,
                            -info_type           => $info_type,
@@ -408,7 +402,6 @@ sub fetch_by_db_accession {
             xref.display_label,
             xref.version,
             exDB.dbprimary_acc_linkable,
-            exDB.display_label_linkable,
             exDB.priority,
             exDB.db_name,
             exDB.db_display_name,
@@ -463,7 +456,7 @@ sub fetch_by_db_accession {
       my ( $dbID,                $dbprimaryId,
            $displayid,           $version,
            $primary_id_linkable,
-           $display_id_linkable, $priority,
+           $priority,
            $dbname,              $db_display_name,
            $release,             $synonym,
            $info_type,           $info_text,
@@ -482,7 +475,6 @@ sub fetch_by_db_accession {
                            -release             => $release,
                            -dbname              => $dbname,
                            -primary_id_linkable => $primary_id_linkable,
-                           -display_id_linkable => $display_id_linkable,
                            -priority            => $priority,
                            -db_display_name     => $db_display_name,
                            -info_type           => $info_type,
@@ -556,7 +548,7 @@ sub store {
                . "a dbID rather than an ensembl object "
                . "to store the xref on" );
 
-      if ( !defined( $ensID->dbID() ) ) {
+      if ( defined( $ensID->dbID() ) ) {
         $ensembl_id = $ensID->dbID();
       } else {
         throw( sprintf( "%s %s doesn't have a dbID, can't store xref",
@@ -624,22 +616,41 @@ sub store {
   #
   # Check for the existance of the external reference, add it if not present
   #
-  my $sth = $self->prepare( "
-       SELECT xref_id
-         FROM xref
-        WHERE external_db_id = ?
-          AND dbprimary_acc  = ?
-          AND version        = ?
-          AND info_type      = ?
-          AND info_text      = ?" );
+
+  my $sql =  "SELECT xref_id FROM xref
+                WHERE external_db_id = ?
+                  AND dbprimary_acc  = ?
+                  AND version        = ?";
+
+  if(defined $exObj->info_type){
+    $sql .= " AND  info_type      = ?";
+  }
+  else{
+    $sql .= " AND info_type is null";
+  }
+
+  if(defined $exObj->info_text){
+    $sql .= " AND  info_text      = ?";
+  }
+  else{
+    $sql .= " AND info_text is null";
+  }
+
+  my $sth = $self->prepare($sql);
 
   $sth->bind_param(1,$dbRef,SQL_INTEGER);
   $sth->bind_param(2,$exObj->primary_id,SQL_VARCHAR);
   $sth->bind_param(3,$exObj->version,SQL_VARCHAR);
-  $sth->bind_param(4,$exObj->info_type,SQL_VARCHAR);
-  $sth->bind_param(5,$exObj->info_text,SQL_VARCHAR);
 
+  my $i = 4;
+  if(defined $exObj->info_type){
+    $sth->bind_param($i++,$exObj->info_type,SQL_VARCHAR);
+  }
+  if(defined $exObj->info_text){
+    $sth->bind_param($i++,$exObj->info_text,SQL_VARCHAR);
+  }
   $sth->execute();
+
   my ($dbX) = $sth->fetchrow_array();
 
   $sth->finish();
@@ -671,6 +682,7 @@ sub store {
     $sth->execute();
 
     $dbX = $sth->{'mysql_insertid'};
+    $exObj->dbID($dbX);
     $sth->finish();
     #
     # store the synonyms for the new xref
@@ -740,7 +752,7 @@ WHERE   xref_id = ?
 
       $sth = $self->prepare(
         qq(
-INSERT IGNORE INTO object_xref
+INSERT INTO object_xref
   SET   xref_id = ?,
         ensembl_object_type = ?,
         ensembl_id = ?,
@@ -753,9 +765,7 @@ INSERT IGNORE INTO object_xref
       $sth->bind_param( 4, $exObj->linkage_annotation(), SQL_VARCHAR );
       $sth->bind_param( 5, $analysis_id,                 SQL_INTEGER );
 
-      #print "stored xref id $dbX in obejct_xref\n";
       $sth->execute();
-      $exObj->dbID($dbX);
       $exObj->adaptor($self);
       my $Xidt = $sth->{'mysql_insertid'};
 
@@ -1092,7 +1102,7 @@ sub _fetch_by_object_type {
   #  my $sth = $self->prepare("
   my $sql = (<<SSQL);
     SELECT xref.xref_id, xref.dbprimary_acc, xref.display_label, xref.version,
-           exDB.dbprimary_acc_linkable, exDB.display_label_linkable,
+           exDB.dbprimary_acc_linkable, 
            exDB.priority,
            exDB.db_name, exDB.db_release, exDB.status, exDB.db_display_name,
            exDB.secondary_db_name, exDB.secondary_db_table,
@@ -1116,20 +1126,20 @@ SSQL
 
   if ( defined($exdbname) ) {
     if ( index( $exdbname, '%' ) != -1 ) {
-      $sql .= " AND exDB.db_name = "
+      $sql .= " AND exDB.db_name LIKE "
         . $self->dbc()->db_handle()->quote( $exdbname, SQL_VARCHAR );
     } else {
-      $sql .= " AND exDB.db_name LIKE "
+      $sql .= " AND exDB.db_name = "
         . $self->dbc()->db_handle()->quote( $exdbname, SQL_VARCHAR );
     }
   }
 
   if ( defined($exdb_type) ) {
     if ( index( $exdb_type, '%' ) != -1 ) {
-      $sql .= " AND exDB.type = "
+      $sql .= " AND exDB.type LIKE "
         . $self->dbc()->db_handle()->quote( $exdb_type, SQL_VARCHAR );
     } else {
-      $sql .= " AND exDB.type LIKE "
+      $sql .= " AND exDB.type = "
         . $self->dbc()->db_handle()->quote( $exdb_type, SQL_VARCHAR );
     }
   }
@@ -1149,7 +1159,7 @@ SSQL
       my ( $refID,                  $dbprimaryId,
            $displayid,              $version,
            $primary_id_linkable,
-           $display_id_linkable,    $priority,
+           $priority,
            $dbname,                 $release,
            $exDB_status,            $exDB_db_display_name,
            $exDB_secondary_db_name, $exDB_secondary_db_table,
@@ -1189,7 +1199,9 @@ SSQL
                        'dbname'             => $dbname,
                        'description'        => $description,
                        'linkage_annotation' => $link_annotation,
-                       'analysis'           => $analysis);
+                       'analysis'           => $analysis,
+		       'ensembl_object_type' => $ensType,
+		       'ensembl_id'          => $ensID );
 
       # Using an outer join on the synonyms as well as on identity_xref,
       # we now have to filter out the duplicates (see v.1.18 for
@@ -1227,7 +1239,6 @@ SSQL
         if ( defined($exDB_status) ) { $exDB->status($exDB_status) }
 
         $exDB->primary_id_linkable($primary_id_linkable);
-        $exDB->display_id_linkable($display_id_linkable);
         $exDB->priority($priority);
         $exDB->db_display_name($exDB_db_display_name);
 
@@ -1384,6 +1395,8 @@ sub list_translation_ids_by_extids {
                NOTE:  In a multi-species database, this method will
                return all the entries matching the search criteria, not
                just the ones associated with the current species.
+               SQL wildcards can be used in the external id, 
+               but overly generic queries (two characters) will be prevented.
   Description: Gets
   Returntype : list of dbIDs (gene_id, transcript_id, etc.)
   Exceptions : none
@@ -1396,6 +1409,21 @@ sub list_translation_ids_by_extids {
 
 sub _type_by_external_id {
   my ( $self, $name, $ensType, $extraType, $external_db_name ) = @_;
+
+  # $name has SQL wildcard support
+  # = or LIKE put into SQL statement, and open queries like % or A% are rejected.
+  my $comparison_operator;
+  if ($name =~ /[_%\[]/) {
+    $comparison_operator = "LIKE";
+    if ($name =~ /^.?%/) {
+      warn "External $ensType name $name is too vague and will monopolise database resources. Please use a more specific $ensType name.\n";
+      return;
+    }
+  }
+  else {
+    $comparison_operator = "=";
+  }
+
 
   my $from_sql  = '';
   my $where_sql = '';
@@ -1469,7 +1497,7 @@ sub _type_by_external_id {
                 xref x,
                 object_xref oxr
       WHERE     $where_sql
-                ( x.dbprimary_acc = ? OR x.display_label = ? )
+                ( x.dbprimary_acc $comparison_operator ? OR x.display_label $comparison_operator ? )
       AND         x.xref_id = oxr.xref_id
       AND         oxr.ensembl_object_type = ?
   );
@@ -1487,7 +1515,7 @@ sub _type_by_external_id {
                 object_xref oxr,
                 xref x
       WHERE     $where_sql
-                syn.synonym = ?
+                syn.synonym $comparison_operator ?
       AND       syn.xref_id = oxr.xref_id
       AND       oxr.ensembl_object_type = ?
       AND       x.xref_id = oxr.xref_id);
@@ -1502,7 +1530,7 @@ sub _type_by_external_id {
                 external_synonym syn,
                 object_xref oxr
       WHERE     $where_sql
-                syn.synonym = ?
+                syn.synonym $comparison_operator ?
       AND       syn.xref_id = oxr.xref_id
       AND       oxr.ensembl_object_type = ?);
 
@@ -1522,8 +1550,9 @@ sub _type_by_external_id {
 
   $sth = $self->prepare($query2);
 
-  $sth->bind_param( 1, $name,    SQL_VARCHAR );
-  $sth->bind_param( 2, $ensType, SQL_VARCHAR );
+  $sth->bind_param( 1, $self->species_id(), SQL_INTEGER );
+  $sth->bind_param( 2, $name,               SQL_VARCHAR );
+  $sth->bind_param( 3, $ensType,            SQL_VARCHAR );
   $sth->execute();
 
   while ( $r = $sth->fetchrow_array() ) { $result{$r} = 1 }
@@ -1642,7 +1671,7 @@ sub fetch_all_by_description {
   my $sql =
     "SELECT xref.xref_id, xref.dbprimary_acc, xref.display_label,
            xref.version,
-           exDB.dbprimary_acc_linkable, exDB.display_label_linkable, exDB.priority,
+           exDB.dbprimary_acc_linkable, exDB.priority,
            exDB.db_name, exDB.db_display_name, exDB.db_release, es.synonym,
            xref.info_type, xref.info_text, exDB.type, exDB.secondary_db_name,
            exDB.secondary_db_table, xref.description
@@ -1670,7 +1699,7 @@ sub fetch_all_by_description {
       my ( $dbID,                $dbprimaryId,
            $displayid,           $version,
            $primary_id_linkable,
-           $display_id_linkable, $priority,
+           $priority,
            $ex_dbname,           $db_display_name,
            $release,             $synonym,
            $info_type,           $info_text,
@@ -1688,7 +1717,6 @@ sub fetch_all_by_description {
                            -release             => $release,
                            -dbname              => $ex_dbname,
                            -primary_id_linkable => $primary_id_linkable,
-                           -display_id_linkable => $display_id_linkable,
                            -priority            => $priority,
                            -db_display_name     => $db_display_name,
                            -info_type           => $info_type,
@@ -1734,7 +1762,7 @@ sub fetch_all_by_source {
   my $sql =
     "SELECT xref.xref_id, xref.dbprimary_acc, xref.display_label,
            xref.version,
-           exDB.dbprimary_acc_linkable, exDB.display_label_linkable, exDB.priority,
+           exDB.dbprimary_acc_linkable, exDB.priority,
            exDB.db_name, exDB.db_display_name, exDB.db_release, es.synonym,
            xref.info_type, xref.info_text, exDB.type, exDB.secondary_db_name,
            exDB.secondary_db_table, xref.description
@@ -1757,7 +1785,7 @@ sub fetch_all_by_source {
       my ( $dbID,                $dbprimaryId,
            $displayid,           $version,
            $primary_id_linkable,
-           $display_id_linkable, $priority,
+           $priority,
            $dbname,              $db_display_name,
            $release,             $synonym,
            $info_type,           $info_text,
@@ -1775,7 +1803,6 @@ sub fetch_all_by_source {
                            -release             => $release,
                            -dbname              => $dbname,
                            -primary_id_linkable => $primary_id_linkable,
-                           -display_id_linkable => $display_id_linkable,
                            -priority            => $priority,
                            -db_display_name     => $db_display_name,
                            -info_type           => $info_type,

@@ -1,3 +1,23 @@
+=head1 LICENSE
+
+ Copyright (c) 1999-2011 The European Bioinformatics Institute and
+ Genome Research Limited.  All rights reserved.
+
+ This software is distributed under a modified Apache license.
+ For license details, please see
+
+   http://www.ensembl.org/info/about/code_licence.html
+
+=head1 CONTACT
+
+ Please email comments or questions to the public Ensembl
+ developers list at <dev@ensembl.org>.
+
+ Questions may also be sent to the Ensembl help desk at
+ <helpdesk@ensembl.org>.
+
+=cut
+
 # Ensembl module for Bio::EnsEMBL::Variation::IndividualGenotype
 #
 # Copyright (c) 2004 Ensembl
@@ -19,10 +39,6 @@ of a single individual at a single position
 
 This is a class representing the genotype of a single diploid individual at
 a specific position
-
-=head1 CONTACT
-
-Post questions to the Ensembl development list: ensembl-dev@ebi.ac.uk
 
 =head1 METHODS
 
@@ -193,8 +209,15 @@ sub variation {
 		  foreach my $vf(@$vfs) {
 			  #print "VF: ", $vf->variation_name, " ", $vf->seq_region_start, "-", $vf->seq_region_end, "\n";
 			  
+			  if(defined($self->{_table} && ($self->{_table} eq 'compressed'))) {
+				next unless $vf->var_class =~ /mixed|sn[p|v]/;
+			  }
+			  
 			  # only attach if the seq_region_start/end match the feature slice's
-			  $self->{'variation'} = $vf->variation if $vf->seq_region_start == $self->feature_Slice->start and $vf->seq_region_end == $self->feature_Slice->end;
+			  if($vf->seq_region_start == $self->feature_Slice->start and $vf->seq_region_end == $self->feature_Slice->end) {
+				$self->{'variation'} = $vf->variation;
+				last;
+			  }
 		  }
 		}
 		
@@ -216,8 +239,10 @@ sub variation {
 		  # otherwise we need to check start coord matches start coord of original feature slice
 		  else {
 			foreach my $vf(@$new_vfs) {
-				#print "VF: ", $vf->variation_name, " ", $vf->seq_region_start, "-", $vf->seq_region_end, "\n";
-				$self->{'variation'} = $vf->variation if $vf->seq_region_start == $self->feature_Slice->start;
+				if($vf->seq_region_start == $self->feature_Slice->start) {
+					$self->{'variation'} = $vf->variation;
+					last;
+				}
 			}
 		  }
 		}

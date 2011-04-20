@@ -1,3 +1,23 @@
+=head1 LICENSE
+
+ Copyright (c) 1999-2011 The European Bioinformatics Institute and
+ Genome Research Limited.  All rights reserved.
+
+ This software is distributed under a modified Apache license.
+ For license details, please see
+
+   http://www.ensembl.org/info/about/code_licence.html
+
+=head1 CONTACT
+
+ Please email comments or questions to the public Ensembl
+ developers list at <dev@ensembl.org>.
+
+ Questions may also be sent to the Ensembl help desk at
+ <helpdesk@ensembl.org>.
+
+=cut
+
 # Ensembl module for Bio::EnsEMBL::Variation::Allele
 #
 # Copyright (c) 2004 Ensembl
@@ -43,10 +63,6 @@ This is a class representing a single allele of a variation.  In addition to
 the nucleotide(s) (or absence of) that representing the allele frequency
 and population information may be present.
 
-=head1 CONTACT
-
-Post questions to the Ensembl development list: ensembl-dev@ebi.ac.uk
-
 =head1 METHODS
 
 =cut
@@ -58,6 +74,9 @@ package Bio::EnsEMBL::Variation::Allele;
 
 use Bio::EnsEMBL::Storable;
 use Bio::EnsEMBL::Utils::Argument qw(rearrange);
+use Bio::EnsEMBL::Utils::Exception qw(throw deprecate warning);
+use Bio::EnsEMBL::Utils::Scalar qw(assert_ref check_ref);
+use Scalar::Util qw(weaken);
 
 our @ISA = ('Bio::EnsEMBL::Storable');
 
@@ -88,22 +107,35 @@ sub new {
   my $caller = shift;
   my $class = ref($caller) || $caller;
 
-  my ($dbID, $adaptor, $allele, $freq, $count, $pop, $ss_id) =
-    rearrange(['dbID', 'ADAPTOR', 'ALLELE', 'FREQUENCY', 'COUNT', 'POPULATION', 'SUBSNP'], @_);
+  my ($dbID, $adaptor, $allele, $freq, $count, $pop, $ss_id, $variation, $variation_id, $population_id) =
+    rearrange(['dbID', 'ADAPTOR', 'ALLELE', 'FREQUENCY', 'COUNT', 'POPULATION', 'SUBSNP', 'VARIATION', 'VARIATION_ID', 'POPULATION_ID'], @_);
   
   # set subsnp_id to undefined if it's 0 in the DB
-  $ss_id = undef if (defined $ss_id && $ss_id == 0);
+  #$ss_id = undef if (defined $ss_id && $ss_id == 0);
   
   # add ss to the subsnp_id
   $ss_id = 'ss'.$ss_id if defined $ss_id && $ss_id !~ /^ss/;
 
+  #ÊCheck that we at least get a BaseAdaptor
+  assert_ref($adaptor,'Bio::EnsEMBL::Variation::DBSQL::BaseAdaptor');
+  #ÊIf the adaptor is not an AlleleAdaptor, try to get it via the passed adaptor
+  unless (check_ref($adaptor,'Bio::EnsEMBL::Variation::DBSQL::AlleleAdaptor')) {
+      $adaptor = $adaptor->db->get_AlleleAdaptor();
+      # Verify that we could get the AlleleAdaptor
+        assert_ref($adaptor,'Bio::EnsEMBL::Variation::DBSQL::AlleleAdaptor');
+  }
+        
   return bless {'dbID'    => $dbID,
                 'adaptor' => $adaptor,
                 'allele'  => $allele,
                 'frequency' => $freq,
                 'count'   => $count,
                 'population' => $pop,
-                'subsnp'  => $ss_id}, $class;
+                'subsnp'  => $ss_id,
+                'variation' => $variation,
+                '_variation_id' => $variation_id,
+                '_population_id' => $population_id
+  }, $class;
 }
 
 
@@ -192,18 +224,29 @@ sub count{
 =cut
 
 sub population{
-  my $self = shift;
+    my $self = shift;
 
-  if(@_) {
-    if(!ref($_[0]) || !$_[0]->isa('Bio::EnsEMBL::Variation::Population')) {
-      throw('Bio::EnsEMBL::Variation::Population argument expected.');
+    if(@_) {
+        assert_ref($_[0],'Bio::EnsEMBL::Variation::Population');
+        $self->{'population'} = shift;
+        $self->{'_population_id'} = $self->{'population'}->dbID();
     }
-    $self->{'population'} = shift;
-  }
 
-  return $self->{'population'};
+    # Population can be lazy-loaded, so get it from the database if we have a sample_id but no cached object
+    if (!defined($self->{'population'}) && defined($self->{'_population_id'})) {
+        
+        #ÊCheck that an adaptor is attached
+        assert_ref($self->adaptor(),'Bio::EnsEMBL::Variation::DBSQL::AlleleAdaptor');
+        
+        #ÊGet a population object
+        my $population = $self->adaptor->db->get_PopulationAdaptor()->fetch_by_dbID($self->{'_population_id'});
+        
+        # Set the population
+        return $self->population($population);
+    }
+    
+    return $self->{'population'};
 }
-
 
 
 =head2 subsnp
@@ -226,7 +269,166 @@ sub subsnp{
 }
 
 
+=head2 variation
 
+  Arg [1]    : Bio::EnsEMBL::Variation::Variation $newval (optional) 
+               The new value to set the variation attribute to
+  Example    : print $a->variation->name();
+  Description: Getter/Setter for the variation attribute.
+  Returntype : Bio::EnsEMBL::Variation::Variation
+  Exceptions : throw on incorrect argument
+  Caller     : general
+  Status     : At Risk
+
+=cut
+
+sub variation {
+    my $self = shift;
+    my $variation = shift;
+  
+    if(defined($variation)) {
+        assert_ref($variation,'Bio::EnsEMBL::Variation::Variation');
+        $self->{'variation'} = $variation;
+        $self->{'_variation_id'} = $variation->dbID();
+    }
+
+    # Variations can be lazy-loaded, so get it from the database if we have a variation_id but no cached object
+    if (!defined($self->{'variation'}) && defined($self->{'_variation_id'})) {
+        
+        #ÊCheck that an adaptor is attached
+        assert_ref($self->adaptor(),'Bio::EnsEMBL::Variation::DBSQL::AlleleAdaptor');
+        
+        #ÊGet a variation object.
+        my $variation = $self->adaptor->db->get_VariationAdaptor()->fetch_by_dbID($self->{'_variation_id'});
+        
+        # Add ourself to the variation object
+        $self->_add_Variation($variation); 
+        
+    }
+    
+    return $self->{'variation'};
+}
+
+=head2 is_failed
+
+  Example    : print $a->is_failed();
+  Description: Gets the failed attribute.
+  Returntype : int
+  Exceptions : none
+  Caller     : general
+  Status     : At Risk
+
+=cut
+
+sub is_failed {
+    my $self = shift;
+  
+    return (length($self->failed_description()) > 0);
+}
+
+
+=head2 _add_Variation
+
+  Arg [1]    : Bio::EnsEMBL::Variation::Variation
+  Example    : $a->add_Variation($var);
+  Description: Associates this Allele with the specified Variation object. This is a private method that should only be called from within the allele module. 
+  Exceptions : thrown on incorrect argument
+  Caller     : general
+  Status     : At Risk
+
+=cut
+
+sub _add_Variation {
+    my $self = shift;
+    my $variation = shift;
+  
+    # Set the variation
+    $self->variation($variation);
+    
+    #ÊAdd the allele to the variation
+    $variation->add_Allele($self);
+    
+    #ÊWeaken the variation's reference back to this allele
+    $variation->_weaken($self);
+    
+}
+
+
+=head2 failed_description
+
+  Arg [1]    : $failed_description (optional)
+	           The new value to set the failed_description attribute to. Should 
+	           be a reference to a list of strings, alternatively a string can
+	           be passed. If multiple failed descriptions are specified, they should
+	           be separated with semi-colons.  
+  Example    : $failed_str = $allele->failed_description();
+  Description: Get/Sets the failed attribute for this allele. The failed
+	       descriptions are lazy-loaded from the database.
+  Returntype : Semi-colon separated string 
+  Exceptions : Thrown on illegal argument.
+  Caller     : general
+  Status     : At risk
+
+=cut
+
+sub failed_description {
+    my $self = shift;
+    my $description = shift;
+  
+    # Update the description if necessary
+    if (defined($description)) {
+        
+        # If the description is a string, split it by semi-colon and take the reference
+        if (check_ref($description,'STRING')) {
+            my @pcs = split(/;/,$description);
+            $description = \@pcs;
+        }
+        # Throw an error if the description is not an arrayref
+        assert_ref($description.'ARRAY');
+        
+        # Update the cached failed_description
+        $self->{'failed_description'} = $description;
+    }
+    #ÊElse, fetch it from the db if it's not cached
+    elsif (!defined($self->{'failed_description'})) {
+        $self->{'failed_description'} = $self->get_all_failed_descriptions();
+    }
+    
+    # Return a semi-colon separated string of descriptions
+    return join(";",@{$self->{'failed_description'}});
+}
+
+=head2 get_all_failed_descriptions
+
+  Example    :  
+                if ($allele->is_failed()) {
+                    my $descriptions = $allele->get_all_failed_descriptions();
+                    print "Allele " . $allele->allele() . " has been flagged as failed because '";
+                    print join("' and '",@{$descriptions}) . "'\n";
+                }
+                
+  Description: Gets all failed descriptions associated with this allele.
+  Returntype : Reference to a list of strings 
+  Exceptions : Thrown if an adaptor is not attached to this object.
+  Caller     : general
+  Status     : At risk
+
+=cut
+
+sub get_all_failed_descriptions {
+    my $self = shift;
+    
+    #ÊIf the failed descriptions haven't been cached yet, load them from db
+    unless (defined($self->{'failed_description'})) {
+        
+        #ÊCheck that this allele has an adaptor attached
+        assert_ref($self->adaptor(),'Bio::EnsEMBL::Variation::DBSQL::AlleleAdaptor');
+    
+        $self->{'failed_description'} = $self->adaptor->get_all_failed_descriptions($self);
+    }
+    
+    return $self->{'failed_description'};
+}
 
 =head2 subsnp_handle
 
@@ -242,38 +444,32 @@ sub subsnp{
 =cut
 
 sub subsnp_handle{
-  my $self = shift;
-  
-  # if changing handle
-  if(@_) {
-    return $self->{'subsnp_handle'} = shift;
-  }
-  
-  # if not already defined, retrieve from the database
-  if(!defined $self->{'subsnp_handle'}) {
-    
-    # check if the subsnp is useable and the db exists
-    if(defined ($self->{'subsnp'}) && defined ($self->{'adaptor'})) {
-      my $ss = $self->subsnp();
+    my $self = shift;
+    my $handle = shift;
       
-      # get rid of the ss from the beginning
-      $ss =~ s/^ss//g;
-      
-      my $sth = $self->{'adaptor'}->dbc->prepare(qq/SELECT handle FROM subsnp_handle WHERE subsnp_id = ?;/);
-      $sth->execute($ss);
-      
-      my $row = $sth->fetchrow_arrayref();
-      
-      my $handle;
-      
-      $handle = $row->[0] if defined($row);
-      
-      return $self->{'subsnp_handle'} = $handle;
+    # if changing handle
+    if(defined($handle)) {
+        $self->{'subsnp_handle'} = $handle;
     }
-  }
-  
-  return $self->{'subsnp_handle'};
+    elsif (!defined($self->{'subsnp_handle'})) {
+
+        #ÊCheck that this allele has an adaptor attached
+        assert_ref($self->adaptor(),'Bio::EnsEMBL::Variation::DBSQL::AlleleAdaptor');
+        
+        $self->{'subsnp_handle'} = $self->adaptor->get_subsnp_handle($self);
+    }
+    
+    return $self->{'subsnp_handle'};
 }
 
+sub _weaken {
+    my $self = shift;
+    
+    #ÊIf the variation is not defined, do nothing
+    return unless (defined($self->variation()));
+    
+    #ÊWeaken the link to the variation
+    weaken($self->{'variation'});
+}
 
 1;

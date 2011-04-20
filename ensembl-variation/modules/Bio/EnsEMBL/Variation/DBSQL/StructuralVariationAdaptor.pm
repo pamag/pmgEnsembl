@@ -1,3 +1,23 @@
+=head1 LICENSE
+
+ Copyright (c) 1999-2011 The European Bioinformatics Institute and
+ Genome Research Limited.  All rights reserved.
+
+ This software is distributed under a modified Apache license.
+ For license details, please see
+
+   http://www.ensembl.org/info/about/code_licence.html
+
+=head1 CONTACT
+
+ Please email comments or questions to the public Ensembl
+ developers list at <dev@ensembl.org>.
+
+ Questions may also be sent to the Ensembl help desk at
+ <helpdesk@ensembl.org>.
+
+=cut
+
 
 # Ensembl module for Bio::EnsEMBL::Variation::DBSQL::StructuralVariationAdaptor
 #
@@ -27,18 +47,12 @@ Bio::EnsEMBL::Variation::DBSQL::StructuralVariationAdaptor
   foreach $sv (@{$sva->fetch_all_by_Slice($slice)}) {
     print $sv->start(), '-', $sv->end(), ' ', $svf->class(), "\n";
   }
-
+ 
 =head1 DESCRIPTION
 
 This adaptor provides database connectivity for StructuralVariation objects.
 Genomic locations of structural variations can be obtained from the database using this
 adaptor.  See the base class BaseFeatureAdaptor for more information.
-
-=head1 AUTHOR - William McLaren
-
-=head1 CONTACT
-
-Post questions to the Ensembl development list ensembl-dev@ebi.ac.uk
 
 =head1 METHODS
 
@@ -58,7 +72,12 @@ our @ISA = ('Bio::EnsEMBL::DBSQL::BaseFeatureAdaptor');
 
 # method used by superclass to construct SQL
 sub _tables { return (['structural_variation', 'sv'],
-		      [ 'source', 's']); }
+		              ['source', 's'],
+					  ['study', 'st']);
+			}
+
+# Add a left join to the study table
+sub _left_join { return (['study', 'st.study_id = sv.study_id']);}
 
 
 sub _default_where_clause {
@@ -67,11 +86,14 @@ sub _default_where_clause {
   return 'sv.source_id = s.source_id';
 }
 
+
+
 sub _columns {
   return qw( sv.structural_variation_id sv.seq_region_id sv.seq_region_start
              sv.seq_region_end sv.seq_region_strand
-             sv.variation_name s.name s.description sv.class
-			 sv.bound_start sv.bound_end);
+             sv.variation_name s.name s.version s.description sv.class
+			 sv.bound_start sv.bound_end sv.allele_string
+			 st.name st.description st.url st.external_reference);
 }
 
 
@@ -94,13 +116,15 @@ sub _objs_from_sth {
 
   my ($struct_variation_id, $seq_region_id, $seq_region_start,
       $seq_region_end, $seq_region_strand,
-      $variation_name, $source_name, $source_description, $sv_class,
-	  $bound_start, $bound_end);
+      $variation_name, $source_name, $source_version, $source_description, $sv_class,
+	  $bound_start, $bound_end, $allele_string, $study_name, $study_description,
+	  $study_url, $external_reference);
 
   $sth->bind_columns(\$struct_variation_id, \$seq_region_id,
                      \$seq_region_start, \$seq_region_end, \$seq_region_strand,
-                     \$variation_name, \$source_name, \$source_description,
-					 \$sv_class, \$bound_start, \$bound_end);
+                     \$variation_name, \$source_name, \$source_version, \$source_description,
+					 \$sv_class, \$bound_start, \$bound_end, \$allele_string, \$study_name, 
+					 \$study_description, \$study_url, \$external_reference);
 
   my $asm_cs;
   my $cmp_cs;
@@ -200,12 +224,18 @@ sub _objs_from_sth {
        'adaptor'  => $self,
        'dbID'     => $struct_variation_id,
        'source'   => $source_name,
-	   'source_description' => $source_description,
-	   'class'     => $sv_class,
-	   'bound_start' => $bound_start,
-	   'bound_end'   => $bound_end,});
+       'source_version'   => $source_version,
+	     'source_description' => $source_description,
+	     'class'     => $sv_class,
+	     'bound_start' => $bound_start,
+	     'bound_end'   => $bound_end,
+	     'allele_string' => $allele_string,
+	     'study_name' => $study_name, 
+	     'study_description' => $study_description,
+	     'study_url' => $study_url, 
+	     'external_reference' => $external_reference,
+  	  });
   }
-
   return \@features;
 
 
@@ -230,59 +260,6 @@ sub list_dbIDs {
   return $self->_list_dbIDs('structural_variation_feature');
 }
 
-
-=head2 get_all_synonym_sources
-
-    Args[1]     : Bio::EnsEMBL::Variation::StructuralVariation vf
-    Example     : my @sources = @{$vf_adaptor->get_all_synonym_sources($vf)};
-    Description : returns a list of all the sources for synonyms of this
-                  StructuralVariation
-    ReturnType  : reference to list of strings
-    Exceptions  : none
-    Caller      : general
-    Status      : At Risk
-                : Variation database is under development.
-
-=cut
-
-sub get_all_synonym_sources{
-    my $self = shift;
-    my $vf = shift;
-    my %sources;
-    my @sources;
-
-    if(!ref($vf) || !$vf->isa('Bio::EnsEMBL::Variation::StructuralVariation')) {
-	 throw("Bio::EnsEMBL::Variation::StructuralVariation argument expected");
-    }
-    
-    if (!defined($vf->{'_variation_id'}) && !defined($vf->{'variation'})){
-	warning("Not possible to get synonym sources for the StructuralVariation: you need to attach a Variation first");
-	return \@sources;
-    }
-    #get the variation_id
-    my $variation_id;
-    if (defined ($vf->{'_variation_id'})){
-	$variation_id = $vf->{'_variation_id'};
-    }
-    else{
-	$variation_id = $vf->variation->dbID();
-    }
-    #and go to the varyation_synonym table to get the extra sources
-    my $source_name;
-    my $sth = $self->prepare(qq{SELECT s.name 
-				FROM variation_synonym vs, source s 
-				WHERE s.source_id = vs.source_id
-			        AND   vs.variation_id = ?
-			    });
-    $sth->bind_param(1,$variation_id,SQL_INTEGER);
-    $sth->execute();
-    $sth->bind_columns(\$source_name);
-    while ($sth->fetch){
-	$sources{$source_name}++;
-    }
-    @sources = keys(%sources); 
-    return \@sources;
-}
 
 =head2 fetch_by_name
 

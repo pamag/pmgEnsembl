@@ -118,6 +118,30 @@ our %XREF_GENE_FILTERS = (
     'predicate'   => sub { $_[0]->dbname eq 'MGI' },
     'transformer' => sub { $_[0]->display_id },
   },
+  'flybase_gene' => {
+    'predicate'   => sub { $_[0]->dbname eq 'FlyBaseName_gene' },
+    'transformer' => sub { $_[0]->display_id },
+  },
+  'wormbase_gene' => {
+    'predicate'   => sub { $_[0]->dbname eq 'wormbase_gene' },
+    'transformer' => sub { $_[0]->primary_id },
+  },
+  'vectorbase_gene' => {
+    'predicate'   => sub { $_[0]->dbname eq 'VB_Community_Annotation' },
+    'transformer' => sub { $_[0]->display_id },
+  },
+  'gramene_gene' => {
+    'predicate'   => sub { $_[0]->dbname eq 'Gramene_GenesDB' },
+    'transformer' => sub { $_[0]->display_id },
+  }, 
+  'ena_gene' => {
+    'predicate'   => sub { $_[0]->dbname eq 'ENA_GENE' },
+    'transformer' => sub { $_[0]->display_id },
+  }, 
+  'dictybase_gene' => {
+    'predicate'   => sub { $_[0]->dbname eq 'DictyBase' },
+    'transformer' => sub { $_[0]->display_id },
+  }, 
 );
 
 =head2 new
@@ -576,9 +600,10 @@ sub map_Features {
   # object for each feature.
   while ( $source_cs && !$source_cs->equals($to_cs) ) {
     
-    info('Beginning mapping from '.$source_cs->name);
-    
     my @this_features = @{ $features };
+    
+    info('Beginning mapping '.scalar @this_features.' features from '.$source_cs->name);
+    
     my $mappers = $self->{'mappers'}{$source_cs->name}{$source_cs->version||''};
     my $passthrough = $self->{'passthrough'}{$source_cs->name}{$source_cs->version||''};
     $features  = [];
@@ -671,6 +696,7 @@ sub map_Features {
     }
     
     $source_cs = $this_cs;
+    $first_iteration = 0;
   }
   
   return \@new_features;
@@ -937,6 +963,7 @@ sub _get_Segments {
     elsif ( my $callback = $XREF_PEPTIDE_FILTERS{$from_cs->name} ) {
       info(sprintf 'Adding mappings for %s %s -> %s %s',
         $from_cs->name, $from_cs->version, $to_cs->name, $to_cs->version);
+warn join ', ', map {$_->dbname} @{($prot->get_all_DBEntries())};
       for my $xref (grep { $callback->{'predicate'}($_) } @{ $prot->get_all_DBEntries() }) {
         my $segid = $callback->{'transformer'}( $xref );
         push @segments, [ $segid ];
@@ -948,6 +975,18 @@ sub _get_Segments {
           my $mapper = Bio::EnsEMBL::ExternalData::DAS::XrefPeptideMapper->new('from', 'to', $from_cs, $to_cs, $xref, $prot);
           $mapper->external_id($segid);
           $mapper->ensembl_id($prot->stable_id);
+          $self->{'mappers'}{$from_cs->name}{$from_cs->version}{$segid} = $mapper;
+        }
+        # Otherwise we assume the mappings are all 1:1 (i.e. IdentityXrefs are 100% identity)
+        else {
+          my $mapper = Bio::EnsEMBL::Mapper->new( 'from', 'to' );
+          $mapper->{'from_cs'} = $from_cs;
+          $mapper->{'to_cs'}   = $to_cs;
+          my $len = $prot->length;
+          $mapper->add_map_coordinates(
+            $segid,           1, $len, 1,
+            $prot->stable_id, 1, $len
+          );
           $self->{'mappers'}{$from_cs->name}{$from_cs->version}{$segid} = $mapper;
         }
       }

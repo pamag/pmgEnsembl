@@ -1,6 +1,6 @@
 =head1 LICENSE
 
-  Copyright (c) 1999-2010 The European Bioinformatics Institute and
+  Copyright (c) 1999-2011 The European Bioinformatics Institute and
   Genome Research Limited.  All rights reserved.
 
   This software is distributed under a modified Apache license.
@@ -1350,7 +1350,7 @@ sub overlaps {
     return undef;
   }
   
-  return ($self->end >= $f->start and $self->start <= $f->end);
+  return ($self->seq_region_end >= $f->seq_region_start and $self->seq_region_start <= $f->seq_region_end);
 }
 
 

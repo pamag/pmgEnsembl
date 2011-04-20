@@ -1,4 +1,4 @@
-# $Id: VBCoordinateMapper.pm,v 1.3 2008-01-28 13:28:13 ak4 Exp $
+# $Id: VBCoordinateMapper.pm,v 1.4 2011-01-28 11:35:59 ak4 Exp $
 
 # This is a set of subroutines used for creating Xrefs based on
 # coordinate overlaps.

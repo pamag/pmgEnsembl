@@ -1,6 +1,6 @@
 =head1 LICENSE
 
-  Copyright (c) 1999-2010 The European Bioinformatics Institute and
+  Copyright (c) 1999-2011 The European Bioinformatics Institute and
   Genome Research Limited.  All rights reserved.
 
   This software is distributed under a modified Apache license.
@@ -254,27 +254,29 @@ sub fetch_by_translation_stable_id {
 =cut
 
 sub fetch_by_translation_id {
-  my $self = shift;
-  my $id   = shift;
+  my ( $self, $p_dbID ) = @_;
 
-  throw("id argument is required.") unless ($id);
+  if ( !defined($p_dbID) ) {
+    throw("dbID argument is required");
+  }
 
-  my $sth = $self->prepare( "SELECT t.transcript_id " .
-                            "FROM   translation t ".
-                            "WHERE  t.translation_id = ?");
+  my $sth =
+    $self->prepare(   "SELECT transcript_id "
+                    . "FROM   translation "
+                    . "WHERE  translation_id = ?" );
 
-  $sth->bind_param(1, $id, SQL_INTEGER);
+  $sth->bind_param( 1, $p_dbID, SQL_INTEGER );
   $sth->execute();
 
-  my ($dbID) = $sth->fetchrow_array;
-  $sth->finish;
-  if ($dbID){
-    return $self->fetch_by_dbID($dbID);
-  } else {
-    return undef;
-  }
-}
+  my ($dbID) = $sth->fetchrow_array();
+  $sth->finish();
 
+  if ($dbID) {
+    return $self->fetch_by_dbID($dbID);
+  }
+
+  return undef;
+}
 
 =head2 fetch_all_by_Gene
 
@@ -475,6 +477,8 @@ sub fetch_all_by_Slice {
                identifier originates.
   Example    : my @transcripts =
                   @{ $tr_adaptor->fetch_all_by_external_name( 'NP_065811.1') };
+               my @more_transcripts = 
+                  @{$tr_adaptor->fetch_all_by_external_name( 'NP_0658__._')};
   Description: Retrieves all transcripts which are associated with
                an external identifier such as a GO term, Swissprot
                identifer, etc.  Usually there will only be a single
@@ -486,6 +490,7 @@ sub fetch_all_by_Slice {
                Transcript::transform method can be used to convert them.
                If no transcripts with the external identifier are found,
                a reference to an empty list is returned.
+               SQL wildcards % and _ are supported in the $external_name
   Returntype : listref of Bio::EnsEMBL::Transcript
   Exceptions : none
   Caller     : general
@@ -533,10 +538,8 @@ sub fetch_all_by_external_name {
 sub fetch_all_by_GOTerm {
   my ( $self, $term ) = @_;
 
-  if ( !ref($term)
-    || !$term->isa('Bio::EnsEMBL::OntologyTerm')
-    || $term->ontology() ne 'GO' )
-  {
+  assert_ref( $term, 'Bio::EnsEMBL::OntologyTerm' );
+  if ( $term->ontology() ne 'GO' ) {
     throw('Argument is not a GO term');
   }
 
@@ -544,7 +547,7 @@ sub fetch_all_by_GOTerm {
 
   my %unique_dbIDs;
   foreach my $accession ( map { $_->accession() }
-    ( $term, @{ $term->descendants() } ) )
+                          ( $term, @{ $term->descendants() } ) )
   {
     my @ids =
       $entryAdaptor->list_transcript_ids_by_extids( $accession, 'GO' );
@@ -553,10 +556,11 @@ sub fetch_all_by_GOTerm {
 
   my @result = @{
     $self->fetch_all_by_dbID_list(
-      [ sort { $a <=> $b } keys(%unique_dbIDs) ] ) };
+                              [ sort { $a <=> $b } keys(%unique_dbIDs) ]
+    ) };
 
   return \@result;
-}
+} ## end sub fetch_all_by_GOTerm
 
 =head2 fetch_all_by_GOTerm_accession
 
@@ -595,7 +599,7 @@ sub fetch_all_by_GOTerm_accession {
 
   my $goAdaptor =
     Bio::EnsEMBL::Registry->get_adaptor( 'Multi', 'Ontology',
-    'GOTerm' );
+                                         'OntologyTerm' );
 
   my $term = $goAdaptor->fetch_by_accession($accession);
 

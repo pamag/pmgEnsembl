@@ -20,6 +20,7 @@ my $feature = Bio::EnsEMBL::Funcgen::MotifFeature->new(
     -DISPLAY_LABEL => $text,
     -SCORE         => $score,
     -FEATURE_TYPE  => $ftype,
+    -INTERDB_STABLE_ID    => 1,
 ); 
 
 
@@ -27,7 +28,7 @@ my $feature = Bio::EnsEMBL::Funcgen::MotifFeature->new(
 =head1 DESCRIPTION
 
 A MotifFeature object represents the genomic placement of a sequence motif.
-For example a transcription factor binding site motif associated with a 
+For example a transcription factor binding site motif associated with a
 position weight matrix. These are generally associated with AnnotatedFeatures
 of the corresponding FeatureType.
 
@@ -89,14 +90,15 @@ use vars qw(@ISA);
   Arg [-ADAPTOR]        : (optional) Bio::EnsEMBL::DBSQL::BaseAdaptor - Database adaptor.
 
   Example    : my $feature = Bio::EnsEMBL::Funcgen::MotifFeature->new(
-									  -SLICE          => $chr_1_slice,
-									  -START          => 1_000_000,
-									  -END            => 1_000_024,
-									  -STRAND         => -1,
-									  -BINDING_MATRIX => $bm,
-									  -DISPLAY_LABEL  => $text,
-									  -SCORE          => $score,
-                                                                         );
+                                									  -SLICE          => $chr_1_slice,
+								                                	  -START          => 1_000_000,
+                                									  -END            => 1_000_024,
+								                                	  -STRAND         => -1,
+                                									  -BINDING_MATRIX => $bm,
+								                                	  -DISPLAY_LABEL  => $text,
+                                  									  -SCORE          => $score,
+                                                                      -INTERDB_STABLE_ID     => 1,
+                                                                     );
 
 
   Description: Constructor for MotifFeature objects.
@@ -112,7 +114,9 @@ sub new {
 	
   my $class = ref($caller) || $caller;
   my $self = $class->SUPER::new(@_);
-  my ($score, $bmatrix, $dlabel) = rearrange(['SCORE', 'BINDING_MATRIX', 'DISPLAY_LABEL'], @_);
+  my $bmatrix;
+  ($self->{'score'}, $bmatrix,   $self->{'display_label'}, $self->{'interdb_stable_id'}) 
+	= rearrange(['SCORE', 'BINDING_MATRIX', 'DISPLAY_LABEL', 'INTERDB_STABLE_ID'], @_);
     
 
   if(! (ref($bmatrix) && $bmatrix->isa('Bio::EnsEMBL::Funcgen::BindingMatrix'))){
@@ -120,8 +124,6 @@ sub new {
   }
 
   $self->{'binding_matrix'} = $bmatrix;
-  $self->{'score'}          = $score  if $score;
-  $self->display_label($dlabel) if $dlabel;
 
   return $self;
 }
@@ -157,9 +159,7 @@ sub new_fast {
 =cut
 
 sub binding_matrix{
-  my $self = shift;
-
-  return $self->{'binding_matrix'};
+  return $_[0]->{'binding_matrix'};
 }
 
 =head2 score
@@ -175,19 +175,14 @@ sub binding_matrix{
 =cut
 
 sub score {
-    my $self = shift;
-	
-    $self->{'score'} = shift if @_;
-		
-    return $self->{'score'};
+  return $_[0]->{'score'};
 }
 
 
 =head2 display_label
 
-  Arg [1]    : string - display label
   Example    : my $label = $feature->display_label();
-  Description: Getter/Setter for the display label of this feature.
+  Description: Getter for the display label of this feature.
   Returntype : str
   Exceptions : None
   Caller     : General
@@ -196,18 +191,10 @@ sub score {
 =cut
 
 sub display_label {
-  my ($self, $dlabel) = @_;
-	
-  #auto generate here if not set in table
-  if ($dlabel){
-	$self->{'display_label'} = $dlabel;
-  }
-  elsif(! defined $self->{'display_label'}){
-	$self->{'display_label'} = $self->binding_matrix->feature_type->name.':'
-	  .$self->binding_matrix->name();
-  }
-  
-  return $self->{'display_label'};
+  #If not set in new before store, a default is stored as:
+  #$mf->binding_matrix->feature_type->name.':'.$mf->binding_matrix->name();
+
+  return $_[0]->{'display_label'};
 }
 
 
@@ -328,6 +315,25 @@ sub infer_variation_consequence{
   return 100 * ($bm->relative_affinity($var_seq,$linear) - $bm->relative_affinity($ref_seq,$linear));
   
 }
+
+=head2 interdb_stable_id
+
+  Arg [1]    : (optional) int - stable_id e.g 1
+  Example    : my $idb_sid = $feature->interdb_stable_id();
+  Description: Getter for the interdb_stable_id attribute for this feature.
+               This is simply to avoid using internal db IDs for inter DB linking
+  Returntype : int
+  Exceptions : None
+  Caller     : General
+  Status     : At Risk
+
+=cut
+
+sub interdb_stable_id {
+  return $_[0]->{'interdb_stable_id'};
+}
+
+
 
 1;
 

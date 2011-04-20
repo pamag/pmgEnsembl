@@ -1,3 +1,23 @@
+=head1 LICENSE
+
+ Copyright (c) 1999-2011 The European Bioinformatics Institute and
+ Genome Research Limited.  All rights reserved.
+
+ This software is distributed under a modified Apache license.
+ For license details, please see
+
+   http://www.ensembl.org/info/about/code_licence.html
+
+=head1 CONTACT
+
+ Please email comments or questions to the public Ensembl
+ developers list at <dev@ensembl.org>.
+
+ Questions may also be sent to the Ensembl help desk at
+ <helpdesk@ensembl.org>.
+
+=cut
+
 # Ensembl module for Bio::EnsEMBL::Variation::VariationFeature
 #
 # Copyright (c) 2004 Ensembl
@@ -56,10 +76,6 @@ of the information has been denormalized and is available on the feature for
 speed purposes.  A VariationFeature behaves as any other Ensembl feature.
 See B<Bio::EnsEMBL::Feature> and B<Bio::EnsEMBL::Variation::Variation>.
 
-=head1 CONTACT
-
-Post questions to the Ensembl development list: ensembl-dev@ebi.ac.uk
-
 =head1 METHODS
 
 =cut
@@ -73,19 +89,22 @@ use Scalar::Util qw(weaken);
 
 use Bio::EnsEMBL::Feature;
 use Bio::EnsEMBL::Utils::Exception qw(throw warning);
+use Bio::EnsEMBL::Utils::Scalar qw(assert_ref);
 use Bio::EnsEMBL::Utils::Argument  qw(rearrange);
 use Bio::EnsEMBL::Utils::Sequence qw(reverse_comp); 
-use Bio::EnsEMBL::Variation::Utils::Sequence qw(ambiguity_code variation_class hgvs_variant_notation);
-use Bio::EnsEMBL::Variation::ConsequenceType;
+use Bio::EnsEMBL::Variation::Utils::Sequence qw(ambiguity_code hgvs_variant_notation SO_variation_class);
 use Bio::EnsEMBL::Variation::Variation;
+use Bio::EnsEMBL::Variation::Utils::VariationEffect qw(MAX_DISTANCE_FROM_TRANSCRIPT);
+use Bio::EnsEMBL::Variation::Utils::Constants qw($DEFAULT_OVERLAP_CONSEQUENCE); 
+use Bio::EnsEMBL::Variation::RegulatoryFeatureVariation;
+use Bio::EnsEMBL::Variation::MotifFeatureVariation;
+use Bio::EnsEMBL::Variation::ExternalFeatureVariation;
 use Bio::EnsEMBL::Slice;
 use Bio::EnsEMBL::Variation::DBSQL::TranscriptVariationAdaptor;
 use Bio::PrimarySeq;
 use Bio::SeqUtils;
 
 our @ISA = ('Bio::EnsEMBL::Feature');
-
-my %CONSEQUENCE_TYPES = %Bio::EnsEMBL::Variation::ConsequenceType::CONSEQUENCE_TYPES;
 
 =head2 new
 
@@ -120,12 +139,15 @@ my %CONSEQUENCE_TYPES = %Bio::EnsEMBL::Variation::ConsequenceType::CONSEQUENCE_T
 
   Arg [-SOURCE] :
     string - the name of the source where the SNP comes from
+  
+  Arg [-SOURCE_VERSION] :
+    number - the version of the source where the SNP comes from
 
   Arg [-VALIDATION_CODE] :
      reference to list of strings
 
-  Arg [-CONSEQUENCE_TYPE] :
-     string - highest consequence type for the transcripts of the VariationFeature
+  Arg [-OVERLAP_CONSEQUENCES] :
+     listref of Bio::EnsEMBL::Variation::OverlapConsequences - all the consequences of this VariationFeature
 
   Arg [-VARIATION_ID] :
     int - the internal id of the variation object associated with this
@@ -133,18 +155,18 @@ my %CONSEQUENCE_TYPES = %Bio::EnsEMBL::Variation::ConsequenceType::CONSEQUENCE_T
     the variation may be lazy-loaded from the database on demand.
 
   Example    :
-    $vf = Bio::EnsEMBL::Variation::VariationFeature->new
-       (-start   => 100,
+    $vf = Bio::EnsEMBL::Variation::VariationFeature->new(
+        -start   => 100,
         -end     => 100,
         -strand  => 1,
         -slice   => $slice,
         -allele_string => 'A/T',
         -variation_name => 'rs635421',
         -map_weight  => 1,
-	-source  => 'dbSNP',
-	-validation_code => ['cluster','doublehit'],
-	-consequence_type => 'INTRONIC',
-        -variation => $v);
+	    -source  => 'dbSNP',
+	    -validation_code => ['cluster','doublehit'],
+        -variation => $v
+    );
 
   Description: Constructor. Instantiates a new VariationFeature object.
   Returntype : Bio::EnsEMBL::Variation::Variation
@@ -157,22 +179,46 @@ my %CONSEQUENCE_TYPES = %Bio::EnsEMBL::Variation::ConsequenceType::CONSEQUENCE_T
 sub new {
   my $caller = shift;
   my $class = ref($caller) || $caller;
-
+    
   my $self = $class->SUPER::new(@_);
-  my ($allele_str, $var_name, $map_weight, $variation, $variation_id, $source, $is_somatic, $validation_code, $consequence_type) =
-    rearrange([qw(ALLELE_STRING VARIATION_NAME 
-                  MAP_WEIGHT VARIATION _VARIATION_ID SOURCE IS_SOMATIC VALIDATION_CODE 
-		  CONSEQUENCE_TYPE)], @_);
 
-  $self->{'allele_string'}    = $allele_str;
-  $self->{'variation_name'}   = $var_name;
-  $self->{'map_weight'}       = $map_weight;
-  $self->{'variation'}        = $variation;
-  $self->{'_variation_id'}    = $variation_id;
-  $self->{'source'}           = $source;
-  $self->{'is_somatic'}       = $is_somatic;
-  $self->{'validation_code'}  = $validation_code;
-  $self->{'consequence_type'} = $consequence_type || ['INTERGENIC'];
+  my (
+      $allele_str, 
+      $var_name, 
+      $map_weight, 
+      $variation,
+      $variation_id, 
+      $source, 
+      $source_version, 
+      $is_somatic, 
+      $validation_code, 
+      $overlap_consequences,
+      $class_so_term
+  ) = rearrange([qw(
+          ALLELE_STRING 
+          VARIATION_NAME 
+          MAP_WEIGHT 
+          VARIATION 
+          _VARIATION_ID 
+          SOURCE 
+          SOURCE_VERSION
+          IS_SOMATIC 
+          VALIDATION_CODE 
+		  OVERLAP_CONSEQUENCES 
+          CLASS_SO_TERM
+        )], @_);
+
+  $self->{'allele_string'}          = $allele_str;
+  $self->{'variation_name'}         = $var_name;
+  $self->{'map_weight'}             = $map_weight;
+  $self->{'variation'}              = $variation;
+  $self->{'_variation_id'}          = $variation_id;
+  $self->{'source'}                 = $source;
+  $self->{'source_version'}         = $source_version;
+  $self->{'is_somatic'}             = $is_somatic;
+  $self->{'validation_code'}        = $validation_code;
+  $self->{'overlap_consequences'}   = $overlap_consequences;
+  $self->{'class_SO_term'}          = $class_so_term;
   
   return $self;
 }
@@ -206,7 +252,6 @@ sub allele_string{
   return $self->{'allele_string'} = shift if(@_);
   return $self->{'allele_string'};
 }
-
 
 
 =head2 display_id
@@ -275,94 +320,196 @@ sub map_weight{
 
 
 =head2 get_all_TranscriptVariations
-  Arg [1]     : (optional) listref of Bio::EnsEMBL::Transcript $transcripts
+
+  Arg [1]     : (optional) listref of Bio::EnsEMBL::Transcript objects
   Example     : $vf->get_all_TranscriptVariations;
-  Description : Getter a list with all the TranscriptVariations associated associated to the VariationFeature.
-                If an optional listref to Transcript objects is supplied, get only TranscriptVariations
-		associated with those Transcripts. In that case, the loaded TVs and associated consequences will not be stored.
-  Returntype  : ref to list of Bio::EnsEMBL::Variation::TranscriptVariation objects
+  Description : Get all the TranscriptVariations associated with this VariationFeature.
+                If the optional list of Transcripts is supplied, get only TranscriptVariations
+		        associated with those Transcripts.
+  Returntype  : listref of Bio::EnsEMBL::Variation::TranscriptVariation objects
   Exceptions  : Thrown on wrong argument type
   Caller      : general
   Status      : At Risk
 
 =cut
 
-sub get_all_TranscriptVariations{
+sub get_all_TranscriptVariations {
+    
+    my ($self, $transcripts) = @_;
+
+    if ($transcripts) {
+        assert_ref($transcripts, 'ARRAY');
+        map { assert_ref($_, 'Bio::EnsEMBL::Transcript') } @$transcripts;
+    }
+
+    #die unless $self->{transcript_variations};
+
+    if ($self->dbID && not defined $self->{transcript_variations}) {
+        # this VariationFeature is from the database, so we can just fetch the 
+        # TranscriptVariations from the database as well
+
+        #die;
+
+        if (my $db = $self->{adaptor}->db) {
+            my $tva = $db->get_TranscriptVariationAdaptor;
+
+            # just fetch TVs for all Transcripts because that's more efficient,
+            # we'll only return those asked for later on
+
+            my $tvs = $tva->fetch_all_by_VariationFeatures([$self]);
+
+            map { $self->add_TranscriptVariation($_) } @$tvs;
+        }
+    }
+    elsif (not defined $self->{transcript_variations}) {
+        # this VariationFeature is not in the database so we have to build the 
+        # TranscriptVariations ourselves
+
+        unless ($transcripts) {
+            # if the caller didn't supply some transcripts fetch those around this VariationFeature
+
+            # get a slice around this transcript twice as large as the defined maximum distance from 
+            # a transcript
+
+            my $slice = $self->feature_Slice->expand(
+                MAX_DISTANCE_FROM_TRANSCRIPT, 
+                MAX_DISTANCE_FROM_TRANSCRIPT
+            );
+
+            # fetch all transcripts on this slice, we also need to transfer the transcripts to the same slice 
+            # as the VariationFeature for the consequence stuff to work
+
+            $transcripts = [ map { $_->transfer($self->slice) } @{ $slice->get_all_Transcripts } ];
+        }
+
+        my @unfetched_transcripts = grep { 
+            not exists $self->{transcript_variations}->{$_->stable_id} 
+        } @$transcripts;
+
+        for my $transcript (@unfetched_transcripts) {
+            $self->add_TranscriptVariation(
+                Bio::EnsEMBL::Variation::TranscriptVariation->new(
+                    -variation_feature  => $self,
+                    -transcript         => $transcript,
+                    -adaptor            => ($self->adaptor->db ? $self->adaptor->db->get_TranscriptVariationAdaptor : undef),
+                )
+            );
+        }
+    }
+
+    if ($transcripts) {
+        # just return TranscriptVariations for the requested Transcripts
+        return [ map { $self->{transcript_variations}->{$_->stable_id} } @$transcripts ];
+    }
+    else {
+        # return all TranscriptVariations
+        return [ values %{ $self->{transcript_variations} } ];
+    }
+}
+
+=head2 get_all_RegulatoryFeatureVariations
+
+  Description : Get all the RegulatoryFeatureVariations associated with this VariationFeature.
+  Returntype  : listref of Bio::EnsEMBL::Variation::RegulatoryFeatureVariation objects
+  Exceptions  : none
+  Status      : At Risk
+
+=cut
+
+sub get_all_RegulatoryFeatureVariations {
     my $self = shift;
-    my $tr_ref = shift;
-    
-    if(defined($tr_ref) && ref($tr_ref) ne 'ARRAY') {
-      throw('Array Bio::EnsEMBL::Transcript expected');
+    return $self->_get_all_RegulationVariations('RegulatoryFeature', @_);
+}
+
+=head2 get_all_MotifFeatureVariations
+
+  Description : Get all the MotifFeatureVariations associated with this VariationFeature.
+  Returntype  : listref of Bio::EnsEMBL::Variation::MotifFeatureVariation objects
+  Exceptions  : none
+  Status      : At Risk
+
+=cut
+
+sub get_all_MotifFeatureVariations {
+    my $self = shift;
+    return $self->_get_all_RegulationVariations('MotifFeature', @_);
+}
+
+=head2 get_all_ExternalFeatureVariations
+
+  Description : Get all the ExternalFeatureVariations associated with this VariationFeature.
+  Returntype  : listref of Bio::EnsEMBL::Variation::ExternalFeatureVariation objects
+  Exceptions  : none
+  Status      : At Risk
+
+=cut
+
+sub get_all_ExternalFeatureVariations {
+    my $self = shift;
+    return $self->_get_all_RegulationVariations('ExternalFeature', @_);
+}
+
+sub _get_all_RegulationVariations {
+    my ($self, $type) = @_;
+
+    unless ($type && ($type eq 'RegulatoryFeature' || $type eq 'MotifFeature' || $type eq 'ExternalFeature')) {
+        throw("Invalid Ensembl Regulation type '$type'");
     }
+
+    unless ($self->{regulation_variations}->{$type}) {
     
-    if(!defined($self->{'transcriptVariations'}) && $self->{'adaptor'})    {
-	 
-	  my $tva;
-	  
-	  if($self->{'adaptor'}->db()) {
-		$tva = $self->{'adaptor'}->db()->get_TranscriptVariationAdaptor();
-	  }
-	  
-	  elsif($self->{'adaptor'}) {
-		$tva = Bio::EnsEMBL::Variation::DBSQL::TranscriptVariationAdaptor->new_fake($self->{'adaptor'}->{'species'});
-	  }
-	  
-	  #lazy-load from database on demand
-	  $tva->fetch_all_by_VariationFeatures([$self],$tr_ref);
-	  $self->{'transcriptVariations'} ||= [];
-	  
-	  # If a transcript array was specified, make sure the fetched TranscriptVariations aren't stored
-	  # so that a subsequent call to this function will load all TranscriptVariations
-	  if (defined($tr_ref)) {
-	    my $trvs = $self->{'transcriptVariations'};
-	    $self->{'transcriptVariations'} = undef;
-	    return $trvs;
-	  }
-	  # Only set the consequence type if no transcript list was specified
-	  else {
-	    # now set the highest priority one
-	    $self->{'consequence_type'} = $self->_highest_priority($self->{'transcriptVariations'});  
-	  }
+        my $fg_adaptor;
+
+        if (my $adap = $self->adaptor) {
+            $fg_adaptor = Bio::EnsEMBL::DBSQL::MergedAdaptor->new(
+                -species  => $adap->db->species, 
+                -type     => $type,
+            );
+            
+            unless ($fg_adaptor) {
+                warning("Failed to get adaptor for $type");
+                return undef;
+            }
+        }
+        else {
+            warning('Cannot get variation features without attached adaptor');
+            return undef;
+        }
+
+        my $slice = $self->feature_Slice;
+                
+        my $constructor = 'Bio::EnsEMBL::Variation::'.$type.'Variation';
+
+        $self->{regulation_variations}->{$type} = [ 
+            map {  
+                $constructor->new(
+                    -variation_feature  => $self,
+                    -feature            => $_,
+                );
+            } map { $_->transfer($self->slice) } @{ $fg_adaptor->fetch_all_by_Slice($slice) } 
+        ];
     }
-    # If TranscriptVariations have already been loaded, return only the ones corresponding to the desired transcripts
-    elsif (defined($self->{'transcriptVariations'}) && defined($tr_ref)) {
-      my @trvs;
-      foreach my $tv (@{$self->{'transcriptVariations'}}) {
-	push(@trvs,$tv) if (grep($_->stable_id() eq $tv->transcript_stable_id(),@{$tr_ref}));
-      }
-      return \@trvs;
-    }
-    
-    return $self->{'transcriptVariations'};
+
+    return $self->{regulation_variations}->{$type};
 }
 
 =head2 add_TranscriptVariation
 
    Arg [1]     : Bio::EnsEMBL::Variation::TranscriptVariation
    Example     : $vf->add_TranscriptVariation($tv);
-   Description : Adds another Transcript variation to the variation feature object
+   Description : Adds a TranscriptVariation to the variation feature object.
    Exceptions  : thrown on bad argument
    Caller      : Bio::EnsEMBL::Variation::TranscriptVariationAdaptor
-   Status     : At Risk
+   Status      : At Risk
 
 =cut
 
 sub add_TranscriptVariation {
-    my $self= shift;
-    if (@_){
-	if(!ref($_[0]) || !$_[0]->isa('Bio::EnsEMBL::Variation::TranscriptVariation')) {
-	    throw("Bio::EnsEMBL::Variation::TranscriptVariation argument expected");
-	}
-	
-	my $tv = shift;
-	
-	# we need to weaken the TranscriptVariation object's reference to the VariationFeature
-	# to allow garbage collection to work (as this is a circular reference)
-	weaken($tv->{variation_feature});
-	
-	#a variation feature can have multiple transcript Variations
-	push @{$self->{'transcriptVariations'}},$tv;
-    }
+    my ($self, $tv) = @_;
+    assert_ref($tv, 'Bio::EnsEMBL::Variation::TranscriptVariation');
+    # we need to weaken the reference back to us to avoid a circular reference
+    weaken($tv->{variation_feature});
+    $self->{transcript_variations}->{$tv->transcript_stable_id} = $tv;
 }
 
 
@@ -400,6 +547,117 @@ sub variation {
   return $self->{'variation'};
 }
 
+=head2 consequence_type
+
+  Description: Get a list of all the unique display_terms of the OverlapConsequences 
+               of this VariationFeature
+  Returntype : listref of strings
+  Exceptions : none
+  Status     : At Risk
+
+=cut
+
+sub consequence_type {
+    
+    my $self = shift;
+
+    unless ($self->{consequence_type}) {
+
+        # work out the terms from the OverlapConsequence objects
+        
+        $self->{consequence_type} = 
+            [ map { $_->display_term } @{ $self->get_all_OverlapConsequences } ];
+    }
+    
+    return $self->{consequence_type};
+}
+
+=head2 get_all_OverlapConsequences
+
+  Description: Get a list of all the unique OverlapConsequences of this VariationFeature, 
+               calculating them on the fly from the TranscriptVariations if necessary
+  Returntype : listref of Bio::EnsEMBL::Variation::OverlapConsequence objects
+  Exceptions : none
+  Status     : At Risk
+
+=cut
+
+sub get_all_OverlapConsequences {
+    my $self = shift;
+
+    unless ($self->{overlap_consequences}) {
+        
+        # work them out from the TranscriptVariations
+
+        # store them in a hash keyed by SO_term as we don't want duplicates from 
+        # different TranscriptVariations
+
+        my %overlap_cons;
+
+        for my $tv (@{ $self->get_all_TranscriptVariations }) {
+            for my $allele (@{ $tv->get_all_alternate_TranscriptVariationAlleles }) {
+                for my $cons (@{ $allele->get_all_OverlapConsequences }) {
+                    $overlap_cons{$cons->SO_term} = $cons;
+                }
+            }
+        }
+
+        # if we don't have any consequences we use a default from Constants.pm 
+        # (currently set to the intergenic consequence)
+
+        $self->{overlap_consequences} = [ 
+            %overlap_cons ? values %overlap_cons : $DEFAULT_OVERLAP_CONSEQUENCE
+        ];
+    }
+
+    return $self->{overlap_consequences}
+}
+
+=head2 add_OverlapConsequence
+
+  Arg [1]    : Bio::EnsEMBL::Variation::OverlapConsequence instance
+  Description: Add an OverlapConsequence to this VariationFeature's list 
+  Returntype : none
+  Exceptions : throws if the argument is the wrong type
+  Status     : At Risk
+
+=cut
+
+sub add_OverlapConsequence {
+    my ($self, $oc);
+    assert_ref($oc, 'Bio::EnsEMBL::Variation::OverlapConsequence');
+    push @{ $self->{overlap_consequences} ||= [] }, $oc;
+}
+
+=head2 most_severe_OverlapConsequence
+
+  Description: Get the OverlapConsequence considered (by Ensembl) to be the most severe 
+               consequence of all the alleles of this VariationFeature 
+  Returntype : Bio::EnsEMBL::Variation::OverlapConsequence
+  Exceptions : none
+  Status     : At Risk
+
+=cut
+
+sub most_severe_OverlapConsequence {
+    my $self = shift;
+    
+    unless ($self->{_most_severe_consequence}) {
+        
+        my $highest;
+        
+        for my $cons (@{ $self->get_all_OverlapConsequences }) {
+            $highest ||= $cons;
+            if ($cons->rank < $highest->rank) {
+                $highest = $cons;
+            }
+        }
+        
+        $self->{_most_severe_consequence} = $highest;
+    }
+    
+    return $self->{_most_severe_consequence};
+}
 
 =head2 display_consequence
 
@@ -408,311 +666,39 @@ sub variation {
   Description: Getter for the consequence type to display,
                when more than one
   Returntype : string
-  Exceptions : throw on incorrect argument
+  Exceptions : none
   Caller     : webteam
   Status     : At Risk
 
 =cut
 
-sub display_consequence{
+sub display_consequence {
     my $self = shift;
-    my $gene = shift;
- 
-    my $highest_priority;
-    if (!defined $gene){
-	#get the value to display from the consequence_type attribute
-	$highest_priority = 'INTERGENIC';
-	foreach my $ct (@{$self->get_consequence_type}){
-	    if ($CONSEQUENCE_TYPES{$ct} < $CONSEQUENCE_TYPES{$highest_priority}){
-		$highest_priority = $ct;
-	    }
-	}
-    }
-    else{
-	#first, get all the transcripts, if any
-	my $transcript_variations = $self->get_all_TranscriptVariations();
-	#if no transcripts, return INTERGENIC type
-	if (!defined $transcript_variations){
-	    return 'INTERGENIC';
-	}
-	if (!ref $gene || !$gene->isa("Bio::EnsEMBL::Gene")){
-	    throw("$gene is not a Bio::EnsEMBL::Gene type!");
-	}
-	my $transcripts = $gene->get_all_Transcripts();
-	my %transcripts_genes;
-	my @new_transcripts;
-	map {$transcripts_genes{$_->dbID()}++} @{$transcripts};
-	foreach my $transcript_variation (@{$transcript_variations}){
-	    if (exists $transcripts_genes{$transcript_variation->transcript->dbID()}){
-		push @new_transcripts,$transcript_variation;
-	    }
-	}
-	$highest_priority = $self->_highest_priority(\@new_transcripts);	
-    }
-
-    return $highest_priority;
+    return $self->most_severe_OverlapConsequence->display_term;
 }
 
 =head2 add_consequence_type
 
-    Arg [1]     : string $consequence_type
-    Example     : $vf->add_consequence_type("UPSTREAM")
-    Description : Setter for the consequence type of this VariationFeature
-                  Allowed values are: 'ESSENTIAL_SPLICE_SITE','STOP_GAINED','STOP_LOST','FRAMESHIFT_CODING',
-		  'NON_SYNONYMOUS_CODING','SPLICE_SITE','SYNONYMOUS_CODING','REGULATORY_REGION',
-		  '5PRIME_UTR','3PRIME_UTR','INTRONIC','UPSTREAM','DOWNSTREAM','INTERGENIC'
-    ReturnType  : string
-    Exceptions  : none
-    Caller      : general
-    Status      : At Risk
+    Status : Deprecated, use add_OverlapConsequence instead
 
 =cut
 
 sub add_consequence_type{
     my $self = shift;
-    my $consequence_type = shift;
-
-    if ($CONSEQUENCE_TYPES{$consequence_type}){
-	push @{$self->{'consequence_type'}}, $consequence_type;
-	return $self->{'consequence_type'};
-    }
-    warning("You are trying to set the consequence type to a non-allowed type. The allowed types are: ", keys %CONSEQUENCE_TYPES);
-    return '';
+    warning('Deprecated method, use add_OverlapConsequence instead');
+    return $self->add_OverlapConsequence(@_);
 }
 
 =head2 get_consequence_type
 
-   Arg[1]      : (optional) Bio::EnsEMBL::Gene $g
-   Example     : if($vf->get_consequence_type eq 'INTRONIC'){do_something();}
-   Description : Getter for the consequence type of this variation, which is the highest of the transcripts that has.
-                 If an argument provided, gets the highest of the transcripts where the gene appears
-                 Allowed values are:'ESSENTIAL_SPLICE_SITE','STOP_GAINED','STOP_LOST','FRAMESHIFT_CODING',
-		  'NON_SYNONYMOUS_CODING','SPLICE_SITE','SYNONYMOUS_CODING','REGULATORY_REGION',
-		  '5PRIME_UTR','3PRIME_UTR','INTRONIC','UPSTREAM','DOWNSTREAM','INTERGENIC'
-   Returntype : ref to array of strings
-   Exceptions : throw if provided argument not a gene
-   Caller     : general
-   Status     : At Risk
+    Status : Deprecated, use consequence_type instead
 
 =cut
 
 sub get_consequence_type {
-  my $self = shift;
-  my $gene = shift;
-    
-  if(!defined $gene){
-    return $self->{'consequence_type'};
-  } 
-  else{
-      my $highest_priority;
-    #first, get all the transcripts, if any
-      my $transcript_variations = $self->get_all_TranscriptVariations();
-      #if no transcripts, return INTERGENIC type
-      if (!defined $transcript_variations){
-	  return ['INTERGENIC'];
-      }
-      if (!ref $gene || !$gene->isa("Bio::EnsEMBL::Gene")){
-	  throw("$gene is not a Bio::EnsEMBL::Gene type!");
-      }
-      my $transcripts = $gene->get_all_Transcripts();
-      my %transcripts_genes;
-      my @new_transcripts;
-      map {$transcripts_genes{$_->dbID()}++} @{$transcripts};
-      foreach my $transcript_variation (@{$transcript_variations}){
-	  if (exists $transcripts_genes{$transcript_variation->transcript->dbID()}){
-	    push @new_transcripts,$transcript_variation;
-	}
-      }
-      $highest_priority = $self->_highest_priority(\@new_transcripts);	
-      return $highest_priority;
-  }
-}
-
-
-=head2 add_splice_site
-
-    Arg [1]     : string $splice_site
-    Example     : $vf->add_splice_site('ESSENTIAL_SPLICE_SITE')
-    Description : Setter for the splice site type of this VariationFeature
-                  Allowed values are: 'ESSENTIAL_SPLICE_SITE', 'SPLICE_SITE'
-    ReturnType  : string
-    Exceptions  : none
-    Caller      : general
-
-
-sub add_splice_site{
     my $self = shift;
-    my $splice_site = shift;
-
-    return $self->{'splice_site'} = $splice_site if ($SPLICE_SITES{$splice_site});
-    warning("You are trying to set the splice site to a non-allowed type. The allowed types are: ", keys %SPLICE_SITES);
-    return '';
-}
-
-=head2 get_splice_site
-
-   Arg[1]      : (optional) Bio::EnsEMBL::Gene $g
-   Example     : if($vf->get_splice_site eq 'SPLICE_SITE'){do_something();}
-   Description : Getter for the splice site of this variation, which is the highest of the transcripts that has.
-                 If an argument provided, gets the highest of the transcripts where the gene appears
-                 Allowed values are:'ESSENTIAL_SPLICE_SITES','SPLICE_SITE'
-   Returntype : string
-   Exceptions : throw if provided argument not a gene
-   Caller     : general
-
-
-sub get_splice_site{
-  my $self = shift;
-  my $gene = shift;
-    
-  if(!defined $gene){
-    return $self->{'splice_site'};
-  } 
-  else{
-      my $highest_priority;
-      #first, get all the transcripts, if any
-      my $transcript_variations = $self->get_all_TranscriptVariations();
-      #if no transcripts, return INTERGENIC type
-      if (!defined $transcript_variations){
-	  return '';
-      }
-      if (!ref $gene || !$gene->isa("Bio::EnsEMBL::Gene")){
-	  throw("$gene is not a Bio::EnsEMBL::Gene type!");
-      }
-      my $transcripts = $gene->get_all_Transcripts();
-      my %transcripts_genes;
-      my @new_transcripts;
-      map {$transcripts_genes{$_->dbID()}++} @{$transcripts};
-      foreach my $transcript_variation (@{$transcript_variations}){
-	  if (exists $transcripts_genes{$transcript_variation->transcript->dbID()}){
-	      push @new_transcripts,$transcript_variation;
-	  }
-      }
-      #get the highest type in the splice site
-      foreach my $tv (@new_transcripts){
-	  if ((defined $tv->splice_site) and ($SPLICE_SITES{$tv->splice_site} < $SPLICE_SITES{$highest_priority})){
-	      $highest_priority = $tv->splice_site;
-	  }
-      }      
-      return $highest_priority;      
-  }
-}
-
-=head2 add_regulatory_region
-
-    Arg [1]     : string $regulatory_region
-    Example     : $vf->add_regulatory_region('REGULATORY_REGION')
-    Description : Setter for the regulatory region type of this VariationFeature
-                  Allowed value is: 'REGULATORY_REGION'
-    ReturnType  : string
-    Exceptions  : none
-    Caller      : general
-
-
-sub add_regulatory_region{
-    my $self = shift;
-    my $regulatory_region = shift;
-
-    return $self->{'regulatory_region'} = $regulatory_region if ($REGULATORY_REGION{$regulatory_region});
-    warning("You are trying to set the regulatory_region to a non-allowed type. The allowed type is: ", keys %REGULATORY_REGION);
-    return '';
-}
-
-=head2 get_regulatory_region
-
-   Arg[1]      : (optional) Bio::EnsEMBL::Gene $g
-   Example     : if($vf->get_regulatory_region eq 'REGULATORY_REGION'){do_something();}
-   Description : Getter for the regulatory region of this variation
-                 If an argument provided, gets the highest of the transcripts where the gene appears
-                 Allowed value is :'REGULATORY_REGION'
-   Returntype : string
-   Exceptions : throw if provided argument is not a gene
-   Caller     : general
-
-
-sub get_regulatory_region{
-  my $self = shift;
-  my $gene = shift;
-    
-  if(!defined $gene){
-    return $self->{'regulatory_region'};
-  } 
-  else{
-      my $regulatory_region;
-      #first, get all the transcripts, if any
-      my $transcript_variations = $self->get_all_TranscriptVariations();
-      #if no transcripts, return INTERGENIC type
-      if (!defined $transcript_variations){
-	  return '';
-      }
-      if (!ref $gene || !$gene->isa("Bio::EnsEMBL::Gene")){
-	  throw("$gene is not a Bio::EnsEMBL::Gene type!");
-      }
-      my $transcripts = $gene->get_all_Transcripts();
-      my %transcripts_genes;
-      my @new_transcripts;
-      map {$transcripts_genes{$_->dbID()}++} @{$transcripts};
-      foreach my $transcript_variation (@{$transcript_variations}){
-	  if (exists $transcripts_genes{$transcript_variation->transcript->dbID()}){
-	      push @new_transcripts,$transcript_variation;
-	  }
-      }
-
-      foreach my $tv (@new_transcripts){
-	if (defined $tv->regulatory_region ()){
-	  $regulatory_region = $tv->regulatory_region();
-	  last;
-	}
-      }
-      return $regulatory_region;
-  }
-}
-
-=cut
-
-#for a list of transcript variations, gets the one with highest priority
-sub _highest_priority{
-    my $self= shift;
-    my $transcript_variations = shift;
-    my $highest_type = 'INTERGENIC';
-    my $highest_splice = '';
-    my $highest_regulatory = '';
-    my @highest_priority;
-    my %splice_site = ( 'ESSENTIAL_SPLICE_SITE' => 1,
-			'SPLICE_SITE'           => 2);
-    my %regulatory_region = ( 'REGULATORY_REGION' => 1);
-
-    foreach my $tv (@{$transcript_variations}){
- 	#with a frameshift coding, return, is the highest value
-	my $consequences = $tv->consequence_type; #returns a ref to array
-	foreach my $consequence_type (@{$consequences}){
-	    if (defined $splice_site{$consequence_type}){
-		if ((!defined $splice_site{$highest_splice}) || (defined $splice_site{$highest_splice} && $splice_site{$consequence_type} < $splice_site{$highest_splice})){
-		    $highest_splice = $consequence_type;
-		}
-	    }
-	    else{
-		if (defined $regulatory_region{$consequence_type}){
-		    if ((!defined $regulatory_region{$highest_regulatory}) || (defined $regulatory_region{$highest_regulatory} && $regulatory_region{$consequence_type} < $regulatory_region{$highest_regulatory})){
-			$highest_regulatory = $consequence_type;
-		    }
-		}
-		else{
-		    if (defined $CONSEQUENCE_TYPES{$consequence_type} && $CONSEQUENCE_TYPES{$consequence_type} < $CONSEQUENCE_TYPES{$highest_type}){
-			$highest_type = $consequence_type;
-		    }
-		}
-	    }
-	    
-	}
-	
-    }   
-    return ['INTERGENIC'] if (!defined $transcript_variations);
-    push @highest_priority, $highest_regulatory if ($highest_regulatory ne '');
-    push @highest_priority, $highest_splice if ($highest_splice ne '');
-    push @highest_priority, $highest_type;
-    
-    return \@highest_priority;
+    warning('Deprecated method, use consequence_type instead');
+    return $self->consequence_type;
 }
 
 =head2 ambig_code
@@ -735,21 +721,72 @@ sub ambig_code{
 
 =head2 var_class
 
-    Args         : None
-    Example      : my $variation_class = $vf->var_class()
-    Description  : returns the class for the variation, according to dbSNP classification
-    ReturnType   : String $variation_class
+    Args[1]      : (optional) no_db - don't use the term from the database, always calculate it from the allele string 
+                   (used by the ensembl variation pipeline)
+    Example      : my $variation_class = $vf->var_class
+    Description  : returns the Ensembl term for the class of this variation
+    ReturnType   : string
+    Exceptions   : throws if we can't find a corresponding display term for an SO term
+    Caller       : General
+    Status       : At Risk
+
+=cut
+
+sub var_class {
+
+    my $self    = shift;
+    my $no_db   = shift;
+    
+    unless ($self->{class_display_term}) {
+        
+        my $so_term = $self->class_SO_term(undef, $no_db);
+
+        # convert the SO term to the ensembl display term
+        
+		if ($self->{adaptor}->AttributeAdaptor) {
+			if (my $display_term = $self->{adaptor}->AttributeAdaptor->display_term_for_SO_term(
+				$so_term, 
+				$self->is_somatic
+			) ) {
+			  $self->{class_display_term} = $display_term;
+			}
+			else {
+				throw("Didn't find display term for SO term '$so_term'");
+			}
+		}
+		else {
+			$self->{class_display_term}= $so_term;
+		}
+    }
+    
+    return $self->{class_display_term};
+}
+
+=head2 class_SO_term
+
+    Args[1]      : (optional) class_SO_term - the SO term for the class of this variation feature
+    Args[2]      : (optional) no_db - don't use the term from the database, always calculate it from the allele string 
+                   (used by the ensembl variation pipeline)
+    Example      : my $SO_variation_class = $vf->class_SO_term()
+    Description  : Get/set the SO term for the class of this variation
+    ReturnType   : string
     Exceptions   : none
     Caller       : General
     Status       : At Risk
 
 =cut
 
-sub var_class{
-    my $self = shift;
-    return &variation_class($self->allele_string, $self->is_somatic);
-}
+sub class_SO_term {
+    my ($self, $class_SO_term, $no_db) = @_;
+   
+    $self->{class_SO_term} = $class_SO_term if $class_SO_term;
 
+    if ($no_db || !$self->{class_SO_term}) {
+        $self->{class_SO_term} = SO_variation_class($self->allele_string);
+    }
+
+    return $self->{class_SO_term};
+}
 
 =head2 get_all_validation_states
 
@@ -825,25 +862,40 @@ sub add_validation_state {
   return;
 }
 
-
-
 =head2 source
 
-  Arg [1]    : string $source (optional)
-               The new value to set the source attribute to
-  Example    : $source = $vf->source()
+  Arg [1]    : string $source_name (optional) - the new value to set the source attribute to
+  Example    : $source = $vf->source;
   Description: Getter/Setter for the source attribute
-  Returntype : string
+  Returntype : the source name as a string, 
   Exceptions : none
   Caller     : general
   Status     : At Risk
 
 =cut
 
-sub source{
-  my $self = shift;
-  return $self->{'source'} = shift if(@_);
-  return $self->{'source'};
+sub source {
+  my ($self, $source) = @_;
+  $self->{source} = $source if $source;
+  return $self->{source};
+}
+
+=head2 source_version
+
+  Arg [1]    : number $source_version (optional) - the new value to set the source version attribute to
+  Example    : $source_version = $vf->source_version;
+  Description: Getter/Setter for the source version attribute
+  Returntype : the source version as a number 
+  Exceptions : none
+  Caller     : general
+  Status     : At Risk
+
+=cut
+
+sub source_version {
+  my ($self, $source_version) = @_;
+  $self->{source_version} = $source_version if $source_version;
+  return $self->{source_version};
 }
 
 =head2 is_somatic
@@ -967,6 +1019,75 @@ sub get_all_LD_values{
     return {};
 }
 
+=head2 get_all_LD_Populations
+
+    Args        : none
+    Description : returns a list of populations that could produces LD values
+	              for this VariationFeature
+    ReturnType  : listref of Bio::EnsEMBL::Variation::Population objects
+    Exceptions  : none
+    Caller      : snpview
+    Status      : At Risk
+
+=cut
+
+sub get_all_LD_Populations{
+    my $self = shift;
+    
+	my $pa = $self->adaptor->db->get_PopulationAdaptor;
+	return [] unless $pa;
+	
+	my $ld_pops = $pa->fetch_all_LD_Populations;
+	return [] unless $ld_pops;
+	
+	my $sth = $self->adaptor->db->prepare(qq{
+	  SELECT ip.population_sample_id, c.seq_region_start, c.genotypes
+	  FROM compressed_genotype_single_bp c, individual_population ip
+	  WHERE c.sample_id = ip.individual_sample_id
+	  AND c.seq_region_id = ?
+	  AND c.seq_region_start < ?
+	  AND c.seq_region_end > ?
+	});
+	
+	my $this_vf_start = $self->seq_region_start;
+	
+	$sth->bind_param(1, $self->feature_Slice->get_seq_region_id);
+	$sth->bind_param(2, $self->seq_region_end);
+	$sth->bind_param(3, $this_vf_start);
+	
+	$sth->execute;
+	
+	my ($sample_id, $seq_region_start, $genotypes);
+	$sth->bind_columns(\$sample_id, \$seq_region_start, \$genotypes);
+	
+	my %have_genotypes = ();
+	
+	while($sth->fetch()) {
+	  
+	  next if $have_genotypes{$sample_id};
+	  
+	  if($seq_region_start == $this_vf_start) {
+		$have_genotypes{$sample_id} = 1;
+		next;
+	  }
+	  
+	  my @genotypes = unpack '(aan)*', $genotypes;
+	  my $gt_start = $seq_region_start;
+	  
+	  while(my( $allele_1, $allele_2, $gap ) = splice @genotypes, 0, 3 ) {
+		if($gt_start == $this_vf_start) {
+		  $have_genotypes{$sample_id} = 1;
+		  last;
+		}
+		$gt_start += $gap + 1 if defined $gap;
+	  }
+	}
+	
+	my @final_list = grep {$have_genotypes{$_->dbID}} @$ld_pops;
+	
+	return \@final_list;
+}
+
 =head2 get_all_sources
 
     Args        : none
@@ -1068,7 +1189,7 @@ sub get_all_Alleles{
 	# now sort them by population, submitter, allele
 	my @new_alleles = sort {
 	  ($a->population ? $a->population->name : "") cmp ($b->population ? $b->population->name : "") ||
-	  ($a->subsnp ? $a->subsnp_handle : "") cmp ($b->subsnp ? $b->subsnp_handle : "") ||
+	  ($a->subsnp ? $a->subsnp : "") cmp ($b->subsnp ? $b->subsnp : "") ||
 	  $order{$b->allele} <=> $order{$a->allele}
 	} @alleles;
 	
@@ -1107,7 +1228,7 @@ sub get_all_PopulationGenotypes{
 	# now sort them by population, submitter, genotype
 	my @new_gens = sort {
 	  ($a->population ? $a->population->name : "") cmp ($b->population ? $b->population->name : "") ||
-	  ($a->subsnp ? $a->subsnp_handle : "") cmp ($b->subsnp ? $b->subsnp_handle : "") ||
+	  ($a->subsnp ? $a->subsnp : "") cmp ($b->subsnp ? $b->subsnp : "") ||
 	  $order{$b->allele1.$b->allele2} <=> $order{$a->allele1.$a->allele2}
 	} @gens;
 	
@@ -1268,7 +1389,8 @@ sub get_all_hgvs_notations {
       my $end_phase = ($cds_end - 1)%3;
       
       # Get the complete, affected codons. Break it apart into the upstream piece, the allele and the downstream piece
-      my $cds = $ref_feature->translateable_seq();
+      #my $cds = $ref_feature->translateable_seq();
+      my $cds = $transcript_variation->_translateable_seq();
       my $codon_ref = substr($cds,($cds_start - 1),($cds_end - $cds_start + 1));
       my $codon_down = substr($cds,$cds_end,(2-$end_phase));
       $codon_up = substr($cds,($cds_start - $start_phase - 1),$start_phase);
@@ -1291,6 +1413,9 @@ sub get_all_hgvs_notations {
       }
     }
     
+    #ÊIf the reference is a slice, use the seq_region_name as identifier
+    $reference_name = $ref_feature->seq_region_name if ($ref_feature->isa('Bio::EnsEMBL::Slice'));
+      
     #ÊUse the feature's display id as reference name unless specified otherwise. If the feature is a transcript or translation, append the version number as well
     $reference_name ||= $ref_feature->display_id() . ($ref_feature->isa('Bio::EnsEMBL::Transcript') ? '.' . $ref_feature->version() : '');
     
@@ -1510,12 +1635,14 @@ sub get_all_hgvs_notations {
           if ($hgvs_notation->{'ref'} =~ m/Ter/) {
             #ÊGet the remaining transcript sequence
             my $utr = $ref_feature->three_prime_utr();
-            my $utr_trans = $utr->translate();
-            # Find the number of residues that are translated until a termination codon is encountered
-            $utr_trans->seq() =~ m/\*/;
-            if ($+[0]) {
-              $hgvs_notation->{'suffix'} = $+[0];
-            }
+	    if (defined($utr)) {
+	      my $utr_trans = $utr->translate();
+	      # Find the number of residues that are translated until a termination codon is encountered
+	      $utr_trans->seq() =~ m/\*/;
+	      if ($+[0]) {
+		$hgvs_notation->{'suffix'} = $+[0];
+	      }
+	    }
           }
           
         }

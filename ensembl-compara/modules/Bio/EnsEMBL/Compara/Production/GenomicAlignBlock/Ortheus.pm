@@ -1,9 +1,20 @@
-#
-# You may distribute this module under the same terms as perl itself
-#
-# POD documentation - main docs before the code
+=head1 LICENSE
 
-=pod 
+  Copyright (c) 1999-2011 The European Bioinformatics Institute and
+  Genome Research Limited.  All rights reserved.
+
+  This software is distributed under a modified Apache license.
+  For license details, please see
+
+    http://www.ensembl.org/info/about/code_licence.html
+
+=head1 CONTACT
+
+  Please email comments or questions to the public Ensembl
+  developers list at <dev@ensembl.org>.
+
+  Questions may also be sent to the Ensembl help desk at
+  <helpdesk@ensembl.org>.
 
 =head1 NAME
 
@@ -76,16 +87,6 @@ If an alignment is longer than this value, it will be split in several blocks in
 
 =back
 
-=head1 AUTHOR
-
-Javier Herrero
-
-
-=head1 CONTACT
-
-Post questions to the Ensembl development list: ensembl-dev@ebi.ac.uk
-
-
 =head1 APPENDIX
 
 The rest of the documentation details each of the object methods. 
@@ -103,6 +104,7 @@ use Bio::EnsEMBL::Utils::Exception;
 use Bio::EnsEMBL::Compara::Graph::NewickParser;
 use Bio::EnsEMBL::Compara::NestedSet;
 use Bio::EnsEMBL::Compara::GenomicAlignGroup;
+use Bio::EnsEMBL::Utils::SqlHelper;
 use Data::Dumper;
 
 use Bio::EnsEMBL::Hive::Process;
@@ -220,17 +222,35 @@ sub run
 
   $self->parse_results();
 }
-
 sub write_output {
-  my ($self) = @_;
+    my ($self) = @_;
 
-  print "WRITE OUTPUT\n" if $self->debug;
+    print "WRITE OUTPUT\n" if $self->debug;
 
-  #
-  #Start transaction
-  #
-  my $dbh = $self->{'comparaDBA'}->dbc->db_handle;
-  my $rc = $dbh->begin_work or die $dbh->errstr;
+    if ($self->do_transactions) {
+	my $compara_conn = $self->{'comparaDBA'}->dbc;
+	my $ancestor_genome_db = $self->{'comparaDBA'}->get_GenomeDBAdaptor->fetch_by_name_assembly("ancestral_sequences");
+	my $ancestral_conn = $ancestor_genome_db->db_adaptor->dbc;
+
+	my $compara_helper = Bio::EnsEMBL::Utils::SqlHelper->new(-DB_CONNECTION => $compara_conn);
+	my $ancestral_helper = Bio::EnsEMBL::Utils::SqlHelper->new(-DB_CONNECTION => $ancestral_conn);
+	$compara_helper->transaction(-CALLBACK => sub {
+	    $ancestral_helper->transaction(-CALLBACK => sub {
+		 $self->_write_output;
+	     });
+         });
+    } else {
+	$self->_write_output;
+    }
+
+  return 1;
+
+}
+
+sub _write_output {
+    my ($self) = @_;
+
+  my $skip_left_right_index = 0;
 
   #Set use_autoincrement to 1 otherwise the GenomicAlignBlockAdaptor will use
   #LOCK TABLES which does an implicit commit and prevent any rollback
@@ -255,14 +275,6 @@ sub write_output {
 
   my $ancestor_genome_db = $self->{'comparaDBA'}->get_GenomeDBAdaptor->fetch_by_name_assembly("ancestral_sequences");
   my $ancestor_dba = $ancestor_genome_db->db_adaptor;
-
-  #
-  #Start transaction on ancestral database
-  #
-  my $original_core_dwi = $ancestor_dba->dbc->disconnect_when_inactive();
-  $ancestor_dba->dbc->disconnect_when_inactive(0);
-  my $dbh_core = $ancestor_dba->dbc->db_handle;
-  my $rc_core = $dbh_core->begin_work or die $dbh_core->errstr;
 
   my $slice_adaptor = $ancestor_dba->get_SliceAdaptor();
   my $ancestor_coord_system_adaptor = $ancestor_dba->get_CoordSystemAdaptor();
@@ -321,8 +333,8 @@ sub write_output {
 					   -length => $length,
 					   -coord_system_name => "ancestralsegment",
 								  );
-		  
  		  $dnafrag_adaptor->store($dnafrag);
+
  		  $genomic_align->dnafrag_id($dnafrag->dbID);
  		  $genomic_align->dnafrag_end($length);
 		  $genomic_align->dnafrag($dnafrag);
@@ -350,30 +362,23 @@ sub write_output {
 	       
 	   }
        } else {
-	   $gata->store($genomic_align_tree);
+	   $gata->store($genomic_align_tree, $skip_left_right_index);
 	   $self->_write_gerp_dataflow(
 			    $genomic_align_tree->modern_genomic_align_block_id,
 			    $mlss);
        }
    }
-  #
-  #Commit transaction
-  #
-  $dbh->commit;
-  $dbh_core->commit;
-  $ancestor_dba->dbc->disconnect_when_inactive($original_core_dwi);
-
-  chdir("$self->worker_temp_directory");
-  foreach(glob("*")){
-      #DO NOT COMMENT THIS OUT!!! (at least not permenantly). Needed
-      #to clean up after each job otherwise you get files left over from
-      #the previous job.
-      unlink($_);
-  }
-
-  return 1;
+    #print "tmp worker dir " . $self->worker_temp_directory . "\n";
+    chdir("$self->worker_temp_directory");
+    foreach(glob("*")){
+	#DO NOT COMMENT THIS OUT!!! (at least not permenantly). Needed
+	#to clean up after each job otherwise you get files left over from
+	#the previous job.
+	unlink($_);
+    }
+    #throw("Test commit");
+    return 1;
 }
-
 
 
 #trim genomic align block from the left hand edge to first position having at
@@ -1126,6 +1131,11 @@ sub reference_species {
   return $self->{'_reference_species'};
 }
 
+sub do_transactions {
+  my $self = shift;
+  $self->{'_do_transactions'} = shift if(@_);
+  return $self->{'_do_transactions'};
+}
 
 
 ##########################################
@@ -1170,6 +1180,12 @@ sub get_params {
   }
   if(defined($params->{'max_block_size'})) {
     $self->{_max_block_size} = $params->{'max_block_size'};
+  }
+  if (defined($params->{'do_transactions'})) {
+      $self->{_do_transactions} = $params->{'do_transactions'};
+  } else {
+      #default is to do transactions
+      $self->{_do_transactions} = 1;
   }
 
   return 1;

@@ -1,6 +1,6 @@
-/BaseWriter.pm/1.1/Mon Sep 13 14:59:14 2010//Tbranch-ensembl-60
-/MultipleWriter.pm/1.1/Mon Sep 13 14:59:14 2010//Tbranch-ensembl-60
-/ProjectedDBEntryWriter.pm/1.1/Mon Sep 13 14:59:14 2010//Tbranch-ensembl-60
-/ProjectedDisplayXrefWriter.pm/1.1/Tue Oct  5 15:37:43 2010//Tbranch-ensembl-60
-/ProjectedFileWriter.pm/1.1/Mon Sep 13 14:59:14 2010//Tbranch-ensembl-60
+/BaseWriter.pm/1.1/Mon Sep 13 14:59:14 2010//Tbranch-ensembl-62
+/MultipleWriter.pm/1.1/Mon Sep 13 14:59:14 2010//Tbranch-ensembl-62
+/ProjectedDBEntryWriter.pm/1.2/Mon Apr  4 22:24:46 2011//Tbranch-ensembl-62
+/ProjectedDisplayXrefWriter.pm/1.1/Tue Oct  5 15:37:43 2010//Tbranch-ensembl-62
+/ProjectedFileWriter.pm/1.2/Mon Apr  4 11:30:56 2011//Tbranch-ensembl-62
 D

@@ -1,6 +1,6 @@
 =head1 LICENSE
 
-  Copyright (c) 1999-2010 The European Bioinformatics Institute and
+  Copyright (c) 1999-2011 The European Bioinformatics Institute and
   Genome Research Limited.  All rights reserved.
 
   This software is distributed under a modified Apache license.
@@ -74,6 +74,7 @@ use Bio::EnsEMBL::StrainSlice;
 #use Bio::EnsEMBL::IndividualSlice;
 #use Bio::EnsEMBL::IndividualSliceFactory;
 use Bio::EnsEMBL::Mapper::RangeRegistry;
+use Bio::EnsEMBL::SeqRegionSynonym;
 
 # use Data::Dumper;
 
@@ -1741,7 +1742,7 @@ sub get_all_somatic_VariationFeatures_with_annotation{
     Arg [1]     : Bio::EnsEMBL:Variation::VariationSet $set
     Description :returns all variation features on this slice associated with a given set.
                  This function will only work correctly if the variation database has been
-                 attached to the core database.
+                 attached to the core database. 
     ReturnType : listref of Bio::EnsEMBL::Variation::VariationFeature
     Exceptions : none
     Caller     : contigview, snpview
@@ -1765,14 +1766,15 @@ sub get_all_VariationFeatures_by_VariationSet {
 =head2 get_all_StructuralVariations
 
     Arg[1]       : $source [optional]
-    Arg[2]       : $class [optional]
+    Arg[2]       : $study [optional]
     Description :returns all structural variations on this slice. This function will only work
                 correctly if the variation database has been attached to the core database.
                 If $source is set, only structural variations with that source name will be returned.
-                If $class is set, only structural variations of that class will be returned.
+                If $study is set, only structural variations of that study will be returned.
+                By default, it only returns structural variants with the class 'SV'.
     ReturnType : listref of Bio::EnsEMBL::Variation::StructuralVariation
     Exceptions : none
-    Caller     : contigview, snpview
+    Caller     : contigview, snpview, structural_variation
     Status     : At Risk
 
 =cut
@@ -1780,7 +1782,10 @@ sub get_all_VariationFeatures_by_VariationSet {
 sub get_all_StructuralVariations{
   my $self = shift;
   my $source = shift;
-  my $sv_class = shift;
+	my $study = shift;
+	my $sv_class = shift;
+	
+  if (!defined($sv_class)) { $sv_class = 'SV'; }
 
   if(!$self->adaptor()) {
     warning('Cannot get structural variations without attached adaptor');
@@ -1790,17 +1795,17 @@ sub get_all_StructuralVariations{
   my $sv_adaptor = Bio::EnsEMBL::DBSQL::MergedAdaptor->new(-species => $self->adaptor()->db()->species, -type => "StructuralVariation");
   if( $sv_adaptor ) {
 
-    if(defined $source && defined $sv_class) {
-      return $sv_adaptor->fetch_all_by_Slice_constraint($self, qq{ s.name = '$source' AND sv.class = '$sv_class'});
+		if(defined $source && defined $study) {
+      return $sv_adaptor->fetch_all_by_Slice_constraint($self, qq{ s.name = '$source' AND sv.class = '$sv_class' AND st.name = '$study'});
     }
     elsif(defined $source) {
-      return $sv_adaptor->fetch_all_by_Slice_constraint($self, qq{ s.name = '$source' });
+      return $sv_adaptor->fetch_all_by_Slice_constraint($self, qq{ s.name = '$source' AND sv.class = '$sv_class'});
     }
-    elsif(defined $sv_class) {
-      return $sv_adaptor->fetch_all_by_Slice_constraint($self, qq{ sv.class = '$sv_class' });
+		elsif(defined $study) {
+      return $sv_adaptor->fetch_all_by_Slice_constraint($self, qq{ st.name = '$study' AND sv.class = '$sv_class'});
     }
     else {
-      return $sv_adaptor->fetch_all_by_Slice($self);
+			return $sv_adaptor->fetch_all_by_Slice_constraint($self, qq{ sv.class = '$sv_class'});
     }
   }
   else {
@@ -1808,6 +1813,30 @@ sub get_all_StructuralVariations{
  		"retrieve variation information" );
     return [];
   }
+}
+
+
+=head2 get_all_CopyNumberVariantProbes
+
+    Arg[1]       : $source [optional]
+    Arg[2]       : $study [optional]
+    Description :returns all copy number variant probes on this slice. This function will only work
+                correctly if the variation database has been attached to the core database.
+                If $source is set, only CNV probes with that source name will be returned.
+                If $study is set, only CNV probes of that study will be returned.
+    ReturnType : listref of Bio::EnsEMBL::Variation::StructuralVariation
+    Exceptions : none
+    Caller     : contigview, snpview, structural_variation
+    Status     : At Risk
+
+=cut
+
+sub get_all_CopyNumberVariantProbes {
+	my $self = shift;
+  my $source = shift;
+	my $study = shift;
+	
+	return $self->get_all_StructuralVariations($source,$study,'CNV_PROBE');
 }
 
 
@@ -3300,6 +3329,62 @@ sub project_to_slice {
 }
 
 
+=head2 get_all_synonyms
+
+  Args       : none.
+  Example    : my @alternative_names = @{$slice->get_all_synonyms()};
+  Description: get a list of alternative names for this slice
+  Returntype : reference to list of SeqRegionSynonym objects.
+  Exception  : none
+  Caller     : general
+  Status     : At Risk
+
+=cut
+
+sub get_all_synonyms{
+  my $self = shift;
+  my $external_db_id =shift;
+
+  if ( !defined( $self->{'synonym'} ) ) {
+    my $adap = $self->adaptor->db->get_SeqRegionSynonymAdaptor();
+    $self->{'synonym'} =  $adap->get_synonyms($self->get_seq_region_id($self), $external_db_id);
+  }
+
+  return $self->{'synonym'};
+}
+
+=head2 add_synonym
+
+  Args[0]    : synonym.
+  Example    : $slice->add_synonym("alt_name");
+  Description: add an alternative name for this slice
+  Returntype : none
+  Exception  : none
+  Caller     : general
+  Status     : At Risk
+
+=cut
+
+sub add_synonym{
+  my $self = shift;
+  my $syn = shift;
+  my $external_db_id = shift;
+  
+  my $adap = $self->adaptor->db->get_SeqRegionSynonymAdaptor();
+  if ( !defined( $self->{'synonym'} ) ) {
+    $self->{'synonym'} = $self->get_all_synonyms();
+  }
+  my $new_syn = Bio::EnsEMBL::SeqRegionSynonym->new( #-adaptor => $adap,
+                                                     -synonym => $syn,
+                                                     -external_db_id => $external_db_id, 
+                                                     -seq_region_id => $self->get_seq_region_id($self));
+
+  print "ADDED new syn $syn to ".$new_syn->seq_region_id."\n";
+
+  push (@{$self->{'synonym'}}, $new_syn);
+
+  return;
+}
 
 #
 # Bioperl Bio::PrimarySeqI methods:
