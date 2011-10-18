@@ -17,4 +17,34 @@
 /translation_attribs_wrapper.pl/1.14/Mon Apr 19 08:25:03 2010//Tbranch-ensembl-62
 /update_mapping_set.pl/1.8/Wed Mar  2 18:21:27 2011//Tbranch-ensembl-62
 /web_stats.sh/1.2/Wed Mar 21 13:05:05 2007//Tbranch-ensembl-62
-D
+D/alt_alleles////
+D/alternative_splicing////
+D/analysis_description////
+D/anopheles_scripts////
+D/assembly////
+D/assembly_patches////
+D/attribute_types////
+D/canonical_transcripts////
+D/chain////
+D/chimp////
+D/db////
+D/density_feature////
+D/ebi_search_dump////
+D/external_db////
+D/golden_path////
+D/id_mapping////
+D/load_databases////
+D/meta_coord////
+D/misc_feature////
+D/mouse_knockouts////
+D/ontology////
+D/production_database////
+D/qtl////
+D/regulatory_regions////
+D/repeats////
+D/surgery////
+D/unmapped_reason////
+D/utilities////
+D/variation////
+D/xref_mapping////
+D/xref_projection////
