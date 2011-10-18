@@ -1,0 +1,11 @@
+pmgEnsembl
+==========
+
+Ensembl local checkout and modified for the PMG (Perl Medical Genetics) modules:
+  pmGWAS (perl modules for GWAS)
+  pmNGS  (perl modules for ngs) 
+
+
+Basically this is a clone of the ensembl CVS but kept in git so
+finding diffs between releases that can affect pmg modules becomes
+fast and trivial.
